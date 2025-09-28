@@ -115,7 +115,7 @@ router.get('/steam', passport.authenticate('steam'));
 // --- 👇 THE FINAL FIX IS HERE 👇 ---
 router.get('/steam/return',
   // 1. Сначала Passport просто проверяет, что ответ от Steam корректен.
-  passport.authenticate('steam', { failureRedirect: 'https://prolobby.vercel.app/profile' }),
+  passport.authenticate('steam', { failureRedirect: 'https://1lobby.vercel.app/profile' }),
   
   // 2. После успеха, мы вручную обновляем сессию и делаем редирект.
   async (req, res) => {
@@ -127,15 +127,15 @@ router.get('/steam/return',
       req.login(updatedUserFromStrategy, (err) => {
         if (err) {
           console.error("Ошибка при обновлении сессии после привязки Steam:", err);
-          return res.redirect('https://prolobby.vercel.app/profile?error=session_error');
+          return res.redirect('https://1lobby.vercel.app/profile?error=session_error');
         }
         
         // 4. Теперь, когда сессия обновлена, безопасно перенаправляем на профиль
-        return res.redirect('https://prolobby.vercel.app/profile');
+        return res.redirect('https://1lobby.vercel.app/profile');
       });
     } catch (error) {
         console.error("Критическая ошибка в /steam/return:", error);
-        res.redirect('https://prolobby.vercel.app/profile?error=unknown_error');
+        res.redirect('https://1lobby.vercel.app/profile?error=unknown_error');
     }
   }
 );

@@ -21,7 +21,7 @@ const PORT = 5000;
 
 const io = new Server(server, {
   cors: {
-    origin: ['http://localhost:3000', 'https://prolobby.vercel.app', 'https://1lobby.xyz'],
+    origin: ['http://localhost:3000', 'https://1lobby.vercel.app', 'https://1lobby.xyz'],
     methods: ["GET", "POST", "PUT"],
     credentials: true // --- 👇 ИЗМЕНЕНИЕ №1: Разрешаем передачу cookie 👇 ---
   }
@@ -34,7 +34,7 @@ app.set('trust proxy', 1);
 
 // --- 👇 ИЗМЕНЕНИЕ №2: Более надёжная конфигурация CORS и сессий 👇 ---
 app.use(cors({
-    origin: ['http://localhost:3000', 'https://prolobby.vercel.app', 'https://1lobby.xyz'],
+    origin: ['http://localhost:3000', 'https://1lobby.vercel.app', 'https://1lobby.xyz'],
     credentials: true // Разрешаем браузеру отправлять cookie
 }));
 
