@@ -142,9 +142,12 @@ router.get('/steam', passport.authenticate('steam'));
 
 router.get('/steam/return',
   passport.authenticate('steam', { 
-    failureRedirect: 'https://1lobby.xyz/profile', // 👈 Update this URL
-    successRedirect: 'https://1lobby.xyz/profile'  // 👈 Update this URL
-  })
+    failureRedirect: 'https://1lobby.xyz/profile' // 👈 Use your public domain
+  }),
+  (req, res) => {
+    // On success, the strategy has already saved the user.
+    res.redirect('https://1lobby.xyz/profile'); // 👈 Use your public domain
+  }
 );
 
 module.exports = router;

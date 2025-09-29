@@ -49,7 +49,6 @@ app.use(session({
         secure: false, // false для http
         httpOnly: true,
         sameSite: 'lax', // Lax - лучший баланс для OAuth редиректов
-        domain: 'localhost' // 👈 Явно указываем домен
     }
 }));
 
