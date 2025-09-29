@@ -113,31 +113,38 @@ router.put('/session', async (req, res) => {
 router.get('/steam', passport.authenticate('steam'));
 
 // --- 👇 THE FINAL FIX IS HERE 👇 ---
-router.get('/steam/return',
-  // 1. Сначала Passport просто проверяет, что ответ от Steam корректен.
-  passport.authenticate('steam', { failureRedirect: 'https://1lobby.xyz/profile' }),
+// router.get('/steam/return',
+//   // 1. Сначала Passport просто проверяет, что ответ от Steam корректен.
+//   passport.authenticate('steam', { failureRedirect: 'https://1lobby.xyz/profile' }),
   
-  // 2. После успеха, мы вручную обновляем сессию и делаем редирект.
-  async (req, res) => {
-    try {
-      // req.user здесь - это наш пользователь, обновленный в стратегии Steam
-      const updatedUserFromStrategy = req.user;
+//   // 2. После успеха, мы вручную обновляем сессию и делаем редирект.
+//   async (req, res) => {
+//     try {
+//       // req.user здесь - это наш пользователь, обновленный в стратегии Steam
+//       const updatedUserFromStrategy = req.user;
       
-      // 3. Явно вызываем req.login(), чтобы ПЕРЕЗАПИСАТЬ старую сессию новыми данными
-      req.login(updatedUserFromStrategy, (err) => {
-        if (err) {
-          console.error("Ошибка при обновлении сессии после привязки Steam:", err);
-          return res.redirect('https://1lobby.xyz/profile?error=session_error');
-        }
+//       // 3. Явно вызываем req.login(), чтобы ПЕРЕЗАПИСАТЬ старую сессию новыми данными
+//       req.login(updatedUserFromStrategy, (err) => {
+//         if (err) {
+//           console.error("Ошибка при обновлении сессии после привязки Steam:", err);
+//           return res.redirect('https://1lobby.xyz/profile?error=session_error');
+//         }
         
-        // 4. Теперь, когда сессия обновлена, безопасно перенаправляем на профиль
-        return res.redirect('https://1lobby.xyz/profile');
-      });
-    } catch (error) {
-        console.error("Критическая ошибка в /steam/return:", error);
-        res.redirect('https://1lobby.xyz/profile?error=unknown_error');
-    }
-  }
+//         // 4. Теперь, когда сессия обновлена, безопасно перенаправляем на профиль
+//         return res.redirect('https://1lobby.xyz/profile');
+//       });
+//     } catch (error) {
+//         console.error("Критическая ошибка в /steam/return:", error);
+//         res.redirect('https://1lobby.xyz/profile?error=unknown_error');
+//     }
+//   }
+// );
+
+router.get('/steam/return',
+  passport.authenticate('steam', { 
+    failureRedirect: 'https://1lobby.xyz/profile', // 👈 Update this URL
+    successRedirect: 'https://1lobby.xyz/profile'  // 👈 Update this URL
+  })
 );
 
 module.exports = router;
