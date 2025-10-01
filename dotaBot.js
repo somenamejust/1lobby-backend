@@ -1,6 +1,6 @@
 require('dotenv').config(); // Загружаем переменные из .env
 const SteamUser = require('steam-user');
-const Dota2 = require('dota2');
+const Dota2 = require('node-dota2');
 
 const client = new SteamUser({
     dataDirectory: "./sentry" // 👈 Tell steam-user to save files here
