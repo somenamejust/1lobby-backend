@@ -2,8 +2,9 @@ require('dotenv').config(); // Загружаем переменные из .env
 const SteamUser = require('steam-user');
 const Dota2 = require('dota2');
 
-const client = new SteamUser();
-// Мы передаем `client` в конструктор Dota2, чтобы связать их
+const client = new SteamUser({
+    dataDirectory: "./sentry" // 👈 Tell steam-user to save files here
+});
 const dota = new Dota2.Dota2Client(client, true, true);
 
 const logOnOptions = {
