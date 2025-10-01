@@ -10,7 +10,6 @@ const dota = new Dota2.Dota2Client(client, true, true);
 const logOnOptions = {
     accountName: process.env.BOT_ACCOUNT_NAME,
     password: process.env.BOT_PASSWORD,
-    // Эти два секрета позволят боту автоматически генерировать коды Steam Guard
     sharedSecret: process.env.BOT_SHARED_SECRET,
     identitySecret: process.env.BOT_IDENTITY_SECRET
 };
