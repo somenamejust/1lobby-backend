@@ -35,79 +35,9 @@ router.post('/', async (req, res) => {
   try {
     const newLobby = new Lobby(req.body); 
     await newLobby.save();
-
-    // 🆕 ИНТЕГРАЦИЯ С BOT API: Создание лобби в Dota 2
-    if (newLobby.game === 'Dota 2') {
-      try {
-        // Проверяем что у всех игроков в слотах есть Steam ID
-        const playersInSlots = newLobby.slots.filter(s => s.user);
-        const missingSteamId = [];
-
-        for (const slot of playersInSlots) {
-          const user = await User.findOne({ id: slot.user.id });
-          if (!user || !user.steamId) {
-            missingSteamId.push(slot.user.username);
-          }
-        }
-
-        if (missingSteamId.length > 0) {
-          console.log(`[Bot API] Не удалось создать Dota 2 лобби: у игроков нет Steam ID: ${missingSteamId.join(', ')}`);
-          // Лобби создано на сайте, но не в Dota 2
-          newLobby.status = 'waiting'; // Можно добавить отдельный статус типа 'no_steam_id'
-          await newLobby.save();
-          return res.status(201).json(newLobby);
-        }
-
-        // Формируем массивы игроков для команд
-        const radiantSlots = newLobby.slots.filter(s => s.user && s.team === 'radiant');
-        const direSlots = newLobby.slots.filter(s => s.user && s.team === 'dire');
-
-        const radiantPlayers = await Promise.all(
-          radiantSlots.map(async (slot, index) => {
-            const user = await User.findOne({ id: slot.user.id });
-            return {
-              steamId: user.steamId,
-              slot: index + 1
-            };
-          })
-        );
-
-        const direPlayers = await Promise.all(
-          direSlots.map(async (slot, index) => {
-            const user = await User.findOne({ id: slot.user.id });
-            return {
-              steamId: user.steamId,
-              slot: index + 1
-            };
-          })
-        );
-
-        // Создаем лобби через Bot API
-        const botResult = await botService.createDotaLobby({
-          name: newLobby._id.toString(), // MongoDB ID как название
-          password: newLobby.password || '',
-          region: 8, // Europe West
-          gameMode: 23, // All Pick
-          radiantPlayers,
-          direPlayers
-        });
-
-        // Обновляем лобби с информацией о боте
-        newLobby.botServerId = botResult.botServerId;
-        newLobby.botAccountId = botResult.lobbyId;
-        await newLobby.save();
-
-        console.log(`[Bot API] Dota 2 лобби создано успешно! Bot ID: ${botResult.lobbyId}`);
-      } catch (botError) {
-        console.error('[Bot API] Ошибка при создании Dota 2 лобби:', botError.message);
-        // Лобби создано на сайте, но не в Dota 2 - это не критично
-        // Игроки смогут играть на сайте, но не в реальной Dota 2
-      }
-    }
-
+    
     res.status(201).json(newLobby);
   } catch (error) {
-    console.error('Ошибка создания лобби:', error);
     res.status(500).json({ message: 'Ошибка сервера при создании лобби' });
   }
 });
@@ -452,24 +382,84 @@ router.put('/:id/start', async (req, res) => {
         return res.status(400).json({ message: "The game has already started or is finished." });
     }
 
-    // 🆕 ИНТЕГРАЦИЯ С BOT API: Запуск игры в Dota 2
-    if (lobby.game === 'dota2' && lobby.botAccountId) {
+    // 🆕 СНАЧАЛА СОЗДАЕМ ЛОББИ В DOTA 2
+    if (lobby.game === 'Dota 2' && !lobby.botAccountId) {
       try {
-        const server = botService.getAvailableBotServer();
-        await botService.startGame(lobby.botAccountId, server.url);
-        console.log(`[Bot API] Игра запущена в Dota 2! Lobby ID: ${lobby.botAccountId}`);
+        console.log('[Bot API] Создание Dota 2 лобби перед стартом...');
+        
+        // Собираем игроков из слотов
+        const radiantSlots = lobby.slots.filter(s => s.user && s.team === 'A');
+        const direSlots = lobby.slots.filter(s => s.user && s.team === 'B');
+
+        // Проверяем Steam ID
+        const radiantPlayers = [];
+        const direPlayers = [];
+
+        for (const slot of radiantSlots) {
+          const user = await User.findOne({ id: slot.user.id });
+          if (user && user.steamId) {
+            radiantPlayers.push({
+              steamId: user.steamId,
+              slot: slot.position
+            });
+          } else {
+            console.log(`⚠️ У игрока ${slot.user.username} нет Steam ID`);
+          }
+        }
+
+        for (const slot of direSlots) {
+          const user = await User.findOne({ id: slot.user.id });
+          if (user && user.steamId) {
+            direPlayers.push({
+              steamId: user.steamId,
+              slot: slot.position
+            });
+          } else {
+            console.log(`⚠️ У игрока ${slot.user.username} нет Steam ID`);
+          }
+        }
+
+        if (radiantPlayers.length === 0 && direPlayers.length === 0) {
+          console.log('[Bot API] Нет игроков с Steam ID, пропускаем создание Dota 2 лобби');
+        } else {
+          // Создаем лобби через Bot API
+          const botResult = await botService.createDotaLobby({
+            name: lobby._id.toString(),
+            password: lobby.password || '',
+            region: 8,
+            gameMode: 23,
+            radiantPlayers,
+            direPlayers
+          });
+
+          // Сохраняем информацию о боте
+          lobby.botServerId = botResult.botServerId;
+          lobby.botAccountId = botResult.lobbyId;
+          await lobby.save();
+
+          console.log(`[Bot API] Dota 2 лобби создано! ID: ${botResult.lobbyId}`);
+        }
       } catch (botError) {
-        console.error('[Bot API] Ошибка при запуске игры в Dota 2:', botError.message);
-        return res.status(500).json({ 
-          message: 'Не удалось запустить игру в Dota 2',
-          error: botError.message 
-        });
+        console.error('[Bot API] Ошибка создания Dota 2 лобби:', botError.message);
+        // Не возвращаем ошибку - игра запустится на сайте даже без Dota 2
       }
     }
 
+    // 🆕 ПОТОМ ЗАПУСКАЕМ ИГРУ (если лобби уже было создано)
+    if (lobby.game === 'Dota 2' && lobby.botAccountId) {
+      try {
+        const server = botService.getAvailableBotServer();
+        await botService.startGame(lobby.botAccountId, server.url);
+        console.log(`[Bot API] Игра запущена в Dota 2!`);
+      } catch (botError) {
+        console.error('[Bot API] Ошибка запуска игры в Dota 2:', botError.message);
+      }
+    }
+
+    // Обновляем статус
     lobby.status = 'in_progress';
     lobby.countdownStartTime = null;
-    lobby.startedAt = new Date(); // Добавляем временную метку старта
+    lobby.startedAt = new Date();
 
     const updatedLobby = await lobby.save();
 
