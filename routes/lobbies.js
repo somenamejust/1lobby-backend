@@ -37,7 +37,7 @@ router.post('/', async (req, res) => {
     await newLobby.save();
 
     // 🆕 ИНТЕГРАЦИЯ С BOT API: Создание лобби в Dota 2
-    if (newLobby.game === 'dota2') {
+    if (newLobby.game === 'Dota 2') {
       try {
         // Проверяем что у всех игроков в слотах есть Steam ID
         const playersInSlots = newLobby.slots.filter(s => s.user);
