@@ -13,6 +13,7 @@ const Lobby = require('./models/Lobby');
 const authRoutes = require('./routes/auth');
 const userRoutes = require('./routes/users');
 const lobbyRoutes = require('./routes/lobbies');
+const botService = require('./services/botService');
 
 // Инициализация
 const app = express();
@@ -102,5 +103,46 @@ mongoose.connect(process.env.DATABASE_URL)
     server.listen(PORT, () => {
       console.log(`🚀 Сервер с Socket.IO запущен на порту ${PORT}`);
     });
+
+    const botService = require('./services/botService');    
+    setInterval(async () => {
+      try {
+        const Lobby = require('./models/Lobby');
+        const lobbies = await Lobby.find({ status: 'countdown' });
+        
+        for (const lobby of lobbies) {
+          if (lobby.countdownStartTime) {
+            const elapsed = Date.now() - lobby.countdownStartTime;
+            
+            // Если прошло 60 секунд
+            if (elapsed >= 60000) {
+              console.log(`[Автостарт] Запуск лобби ${lobby.id} (таймер истек)`);
+              
+              // Запускаем игру в Dota 2
+              if (lobby.game === 'dota2' && lobby.botAccountId) {
+                try {
+                  const server = botService.getAvailableBotServer();
+                  await botService.startGame(lobby.botAccountId, server.url);
+                  console.log(`[Bot API] Игра запущена автоматически! Lobby ID: ${lobby.botAccountId}`);
+                } catch (botError) {
+                  console.error('[Bot API] Ошибка автостарта в Dota 2:', botError.message);
+                }
+              }
+              
+              // Обновляем статус лобби
+              lobby.status = 'in_progress';
+              lobby.countdownStartTime = null;
+              lobby.startedAt = new Date();
+              await lobby.save();
+              
+              // Уведомляем всех через WebSocket
+              io.in(lobby.id.toString()).emit('lobbyUpdated', lobby.toObject());
+            }
+          }
+        }
+      } catch (error) {
+        console.error('[Автостарт] Ошибка:', error);
+      }
+    }, 5000); // Проверяем каждые 5 секунд
   })
   .catch(err => console.error('Ошибка подключения к MongoDB:', err));
