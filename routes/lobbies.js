@@ -2,12 +2,12 @@ const express = require('express');
 const router = express.Router();
 const Lobby = require('../models/Lobby');
 const User = require('../models/User');
+const botService = require('../services/botService');
 
 // Маршрут для получения ВСЕХ лобби
 // GET /api/lobbies
 router.get('/', async (req, res) => {
   try {
-    // Находим все лобби, у которых статус НЕ РАВЕН ($ne) 'finished'
     const lobbies = await Lobby.find({ status: { $ne: 'finished' } });
     res.status(200).json(lobbies);
   } catch (error) {
@@ -33,11 +33,81 @@ router.get('/:id', async (req, res) => {
 // POST /api/lobbies
 router.post('/', async (req, res) => {
   try {
-    // req.body будет содержать все данные, которые мы отправим с фронтенда
     const newLobby = new Lobby(req.body); 
-    await newLobby.save(); // Сохраняем новое лобби в базу
+    await newLobby.save();
+
+    // 🆕 ИНТЕГРАЦИЯ С BOT API: Создание лобби в Dota 2
+    if (newLobby.game === 'dota2') {
+      try {
+        // Проверяем что у всех игроков в слотах есть Steam ID
+        const playersInSlots = newLobby.slots.filter(s => s.user);
+        const missingSteamId = [];
+
+        for (const slot of playersInSlots) {
+          const user = await User.findOne({ id: slot.user.id });
+          if (!user || !user.steamId) {
+            missingSteamId.push(slot.user.username);
+          }
+        }
+
+        if (missingSteamId.length > 0) {
+          console.log(`[Bot API] Не удалось создать Dota 2 лобби: у игроков нет Steam ID: ${missingSteamId.join(', ')}`);
+          // Лобби создано на сайте, но не в Dota 2
+          newLobby.status = 'waiting'; // Можно добавить отдельный статус типа 'no_steam_id'
+          await newLobby.save();
+          return res.status(201).json(newLobby);
+        }
+
+        // Формируем массивы игроков для команд
+        const radiantSlots = newLobby.slots.filter(s => s.user && s.team === 'radiant');
+        const direSlots = newLobby.slots.filter(s => s.user && s.team === 'dire');
+
+        const radiantPlayers = await Promise.all(
+          radiantSlots.map(async (slot, index) => {
+            const user = await User.findOne({ id: slot.user.id });
+            return {
+              steamId: user.steamId,
+              slot: index + 1
+            };
+          })
+        );
+
+        const direPlayers = await Promise.all(
+          direSlots.map(async (slot, index) => {
+            const user = await User.findOne({ id: slot.user.id });
+            return {
+              steamId: user.steamId,
+              slot: index + 1
+            };
+          })
+        );
+
+        // Создаем лобби через Bot API
+        const botResult = await botService.createDotaLobby({
+          name: newLobby._id.toString(), // MongoDB ID как название
+          password: newLobby.password || '',
+          region: 8, // Europe West
+          gameMode: 23, // All Pick
+          radiantPlayers,
+          direPlayers
+        });
+
+        // Обновляем лобби с информацией о боте
+        newLobby.botServerId = botResult.botServerId;
+        newLobby.botAccountId = botResult.lobbyId;
+        await newLobby.save();
+
+        console.log(`[Bot API] Dota 2 лобби создано успешно! Bot ID: ${botResult.lobbyId}`);
+      } catch (botError) {
+        console.error('[Bot API] Ошибка при создании Dota 2 лобби:', botError.message);
+        // Лобби создано на сайте, но не в Dota 2 - это не критично
+        // Игроки смогут играть на сайте, но не в реальной Dota 2
+      }
+    }
+
     res.status(201).json(newLobby);
   } catch (error) {
+    console.error('Ошибка создания лобби:', error);
     res.status(500).json({ message: 'Ошибка сервера при создании лобби' });
   }
 });
@@ -72,10 +142,6 @@ router.put('/:id/join', async (req, res) => {
         lobby.markModified('spectators');
       }
     } else {
-      // --- 👇 FINAL FIX IS HERE 👇 ---
-      // SCENARIO 2: User wants to join as a player
-
-      // 1. FIRST, check for bans and if the user is already in a slot.
       if (lobby.bannedUsers?.includes(String(userFromRequest.id))) {
         return res.status(403).json({ message: "You have been banned from this lobby." });
       }
@@ -83,19 +149,16 @@ router.put('/:id/join', async (req, res) => {
         return res.status(200).json(lobby.toObject());
       }
 
-      // 2. SECOND, check if the lobby is full.
       const freeSlotIndex = lobby.slots.findIndex(slot => !slot.user);
       if (freeSlotIndex === -1) {
         return res.status(400).json({ message: 'Lobby is full' });
       }
 
-      // 3. THIRD, check the user's balance BEFORE adding them.
       const userForCheck = await User.findOne({ id: userFromRequest.id });
       if (!userForCheck || userForCheck.balance < lobby.entryFee) {
           return res.status(403).json({ message: "You do not have enough funds to join." });
       }
 
-      // 4. FINALLY, if all checks pass, add the user to the slot.
       lobby.slots[freeSlotIndex].user = { 
         id: userFromRequest.id, _id: userFromRequest._id, email: userFromRequest.email,
         username: userFromRequest.username, avatarUrl: userFromRequest.avatarUrl, isReady: false 
@@ -132,38 +195,29 @@ router.put('/:id/leave', async (req, res) => {
       return res.status(200).json({ message: "Lobby deleted." });
     }
 
-    // --- 👇 FINAL, SIMPLIFIED LOGIC 👇 ---
-    
-    // Get the initial number of people in the lobby
     const initialCount = lobby.slots.filter(s => s.user).length + lobby.spectators.length;
 
-    // Remove the user from SLOTS
     lobby.slots = lobby.slots.map(slot => {
       if (slot.user?.id === userId) return { ...slot, user: null };
       return slot;
     });
 
-    // Remove the user from SPECTATORS
     lobby.spectators = lobby.spectators.filter(spec => spec.id !== userId);
     
-    // Get the final number of people
     const finalPlayerCount = lobby.slots.filter(s => s.user).length;
     const finalSpectatorCount = lobby.spectators.length;
     const finalTotalCount = finalPlayerCount + finalSpectatorCount;
 
-    // If the number of people has not changed, the user was not found.
     if (finalTotalCount === initialCount) {
       return res.status(404).json({ message: "User was not found in the lobby." });
     }
     
-    // If the lobby is now empty, delete it.
     if (finalTotalCount === 0) {
       io.in(roomName).emit('lobbyDeleted', { message: 'The lobby is now empty.' });
       await Lobby.deleteOne({ id: req.params.id });
       return res.status(200).json({ message: "Lobby deleted." });
     }
 
-    // Otherwise, update the lobby and broadcast the changes.
     lobby.players = finalPlayerCount;
     lobby.markModified('slots');
     lobby.markModified('spectators');
@@ -180,7 +234,7 @@ router.put('/:id/leave', async (req, res) => {
 
 router.put('/:id/occupy', async (req, res) => {
   try {
-    const { userId, slot: targetSlotInfo } = req.body; // Получаем ID юзера и инфо о слоте (team, position)
+    const { userId, slot: targetSlotInfo } = req.body;
     const lobby = await Lobby.findOne({ id: req.params.id });
 
     if (!lobby) return res.status(404).json({ message: "Лобби не найдено" });
@@ -197,34 +251,29 @@ router.put('/:id/occupy', async (req, res) => {
     const currentSlotIndex = lobby.slots.findIndex(s => s.user?.id === userId);
     const userAsSpectator = lobby.spectators.find(spec => spec.id === userId);
     
-    // Сценарий 1: Игрок уже в слоте и хочет переместиться
     if (currentSlotIndex !== -1) {
       console.log("Игрок перемещается из одного слота в другой.");
-      const userToMove = lobby.slots[currentSlotIndex].user; // Сохраняем данные пользователя
-      lobby.slots[currentSlotIndex].user = null; // Освобождаем старый слот
-      targetSlot.user = userToMove; // Занимаем новый слот
+      const userToMove = lobby.slots[currentSlotIndex].user;
+      lobby.slots[currentSlotIndex].user = null;
+      targetSlot.user = userToMove;
     } 
-    // Сценарий 2: Зритель занимает слот
     else if (userAsSpectator) {
       console.log("Зритель занимает слот.");
-      targetSlot.user = { ...userAsSpectator, isReady: false }; // Занимаем слот
-      lobby.spectators = lobby.spectators.filter(spec => spec.id !== userId); // Удаляем из зрителей
+      targetSlot.user = { ...userAsSpectator, isReady: false };
+      lobby.spectators = lobby.spectators.filter(spec => spec.id !== userId);
     } 
-    // Если пользователь не найден ни в слотах, ни в зрителях
     else {
       return res.status(404).json({ message: "Пользователь не найден в этом лобби" });
     }
 
-    // Обновляем состояние и сохраняем
     lobby.players = lobby.slots.filter(s => s.user).length;
     lobby.markModified('slots');
     lobby.markModified('spectators');
 
     const updatedLobby = await lobby.save();
 
-        // --- 👇 ОТПРАВКА ОБНОВЛЕНИЯ ЧЕРЕЗ WEBSOCKET 👇 ---
-    const io = req.app.get('socketio'); // Получаем io из app
-    io.in(req.params.id).emit('lobbyUpdated', updatedLobby.toObject()); // Отправляем всем в "комнате"
+    const io = req.app.get('socketio');
+    io.in(req.params.id).emit('lobbyUpdated', updatedLobby.toObject());
 
     res.status(200).json(updatedLobby.toObject());
 
@@ -246,13 +295,9 @@ router.put('/:id/vacate', async (req, res) => {
 
     const userToMove = lobby.slots[slotIndex].user;
 
-    // TODO: Здесь должна быть логика возврата денег (lobby.entryFee) на баланс userToMove.
-    // Это потребует доступа к модели User.
-
-    // Перемещаем пользователя
-    lobby.slots[slotIndex].user = null; // Освобождаем слот
+    lobby.slots[slotIndex].user = null;
     if (!lobby.spectators.some(spec => spec.id === userId)) {
-        lobby.spectators.push(userToMove); // Добавляем в зрители, если его там еще нет
+        lobby.spectators.push(userToMove);
     }
     lobby.players = lobby.slots.filter(s => s.user).length;
 
@@ -261,9 +306,8 @@ router.put('/:id/vacate', async (req, res) => {
 
     const updatedLobby = await lobby.save();
 
-        // --- 👇 ОТПРАВКА ОБНОВЛЕНИЯ ЧЕРЕЗ WEBSOCKET 👇 ---
-    const io = req.app.get('socketio'); // Получаем io из app
-    io.in(req.params.id).emit('lobbyUpdated', updatedLobby.toObject()); // Отправляем всем в "комнате"
+    const io = req.app.get('socketio');
+    io.in(req.params.id).emit('lobbyUpdated', updatedLobby.toObject());
 
     res.status(200).json(updatedLobby.toObject());
 
@@ -292,35 +336,27 @@ router.put('/:id/ready', async (req, res) => {
       return res.status(404).json({ message: "Игрок не найден в этом лобби" });
     }
 
-    // 1. Переключаем статус готовности конкретного игрока
     slot.user.isReady = !slot.user.isReady;
 
-    // --- 👇 ВОТ ГЛАВНОЕ ИСПРАВЛЕНИЕ 👇 ---
-    
-    // 2. После изменения, проверяем, готовы ли теперь ВСЕ игроки
     const playersInSlots = lobby.slots.filter(s => s.user);
     const areAllPlayersReady = playersInSlots.length === lobby.maxPlayers && playersInSlots.every(p => p.user.isReady);
 
     if (areAllPlayersReady) {
-      // 3. Если все готовы - запускаем отсчет!
       lobby.status = 'countdown';
       lobby.countdownStartTime = Date.now();
       console.log(`[Лобби ${lobby.id}] Все готовы! Запуск отсчета.`);
     } else {
-      // 4. Если кто-то отменил готовность - сбрасываем таймер
       lobby.status = 'waiting';
       lobby.countdownStartTime = null;
       console.log(`[Лобби ${lobby.id}] Отмена готовности. Отсчет остановлен.`);
     }
-    // --- Конец исправления ---
 
-    lobby.markModified('slots'); // Помечаем массив как измененный
+    lobby.markModified('slots');
 
     const updatedLobby = await lobby.save();
 
-        // --- 👇 ОТПРАВКА ОБНОВЛЕНИЯ ЧЕРЕЗ WEBSOCKET 👇 ---
-    const io = req.app.get('socketio'); // Получаем io из app
-    io.in(req.params.id).emit('lobbyUpdated', updatedLobby.toObject()); // Отправляем всем в "комнате"
+    const io = req.app.get('socketio');
+    io.in(req.params.id).emit('lobbyUpdated', updatedLobby.toObject());
 
     res.status(200).json(updatedLobby.toObject());
 
@@ -334,7 +370,7 @@ router.put('/:id/kick', async (req, res) => {
   try {
     const lobbyId = req.params.id;
     const { userIdToKick, hostId } = req.body;
-    const io = req.app.get('socketio'); // Получаем доступ к io
+    const io = req.app.get('socketio');
     const roomName = String(lobbyId);
 
     if (!userIdToKick || !hostId) {
@@ -346,12 +382,10 @@ router.put('/:id/kick', async (req, res) => {
       return res.status(404).json({ message: "Лобби не найдено" });
     }
 
-    // --- 🔐 Проверка авторизации хоста (остаётся без изменений) ---
     if (String(lobby.host.id) !== String(hostId)) {
       return res.status(403).json({ message: "Только хост может кикать игроков!" });
     }
 
-    // --- 1. Сначала выполняем все стандартные действия с базой данных ---
     const slotIndex = lobby.slots.findIndex(s => s.user?.id === userIdToKick);
     if (slotIndex !== -1) {
       lobby.bannedUsers.push(userIdToKick);
@@ -362,19 +396,27 @@ router.put('/:id/kick', async (req, res) => {
     } else {
         return res.status(404).json({ message: "Кикаемый игрок не найден в слоте" });
     }
+
     const updatedLobby = await lobby.save();
 
+    // 🆕 ИНТЕГРАЦИЯ С BOT API: Кик из Dota 2 лобби
+    if (lobby.game === 'dota2' && lobby.botAccountId) {
+      try {
+        const kickedUser = await User.findOne({ id: userIdToKick });
+        if (kickedUser && kickedUser.steamId) {
+          const server = botService.getAvailableBotServer();
+          await botService.kickPlayer(lobby.botAccountId, kickedUser.steamId, server.url);
+          console.log(`[Bot API] Игрок ${kickedUser.username} кикнут из Dota 2 лобби`);
+        }
+      } catch (botError) {
+        console.error('[Bot API] Ошибка при кике из Dota 2:', botError.message);
+        // Игрок кикнут с сайта, но возможно остался в Dota 2 - не критично
+      }
+    }
 
-    // --- 👇 НОВАЯ ЛОГИКА: ПОИСК СОКЕТА И ОТПРАВКА ЛИЧНОГО СОБЫТИЯ 👇 ---
-
-    // 2. Получаем список всех сокетов в комнате лобби
     const socketsInRoom = await io.in(roomName).fetchSockets();
-    
-    // 3. Находим конкретный сокет кикнутого игрока, используя `socket.data.userId`,
-    // который мы установили при событии 'registerUser'.
     const kickedSocket = socketsInRoom.find(s => String(s.data.userId) === String(userIdToKick));
     
-    // 4. Если сокет найден, отправляем ему личное событие
     if (kickedSocket) {
       kickedSocket.emit('youWereKicked', { message: 'Хост исключил вас из лобби.' });
       console.log(`[Кик] Отправлено личное уведомление о кике сокету ${kickedSocket.id}`);
@@ -382,11 +424,8 @@ router.put('/:id/kick', async (req, res) => {
       console.log(`[Кик] Сокет для пользователя ${userIdToKick} не найден (возможно, он уже оффлайн).`);
     }
 
-    // 5. После этого отправляем ОБЩЕЕ обновление всем остальным в комнате,
-    // чтобы они увидели, что слот освободился.
     io.in(roomName).emit('lobbyUpdated', updatedLobby.toObject());
 
-    // 6. Отправляем успешный HTTP-ответ хосту.
     res.status(200).json(updatedLobby.toObject());
 
   } catch (error) {
@@ -405,30 +444,41 @@ router.put('/:id/start', async (req, res) => {
       return res.status(404).json({ message: "Lobby not found" });
     }
 
-    // 1. 🔐 Security Check: Only the host can start the game
     if (String(lobby.host.id) !== String(hostId)) {
       return res.status(403).json({ message: "Only the host can start the game!" });
     }
 
-    // 2. Logic Check: The game shouldn't already be in progress or finished
     if (lobby.status === 'in_progress' || lobby.status === 'finished') {
         return res.status(400).json({ message: "The game has already started or is finished." });
     }
 
-    // 3. Update the lobby status
+    // 🆕 ИНТЕГРАЦИЯ С BOT API: Запуск игры в Dota 2
+    if (lobby.game === 'dota2' && lobby.botAccountId) {
+      try {
+        const server = botService.getAvailableBotServer();
+        await botService.startGame(lobby.botAccountId, server.url);
+        console.log(`[Bot API] Игра запущена в Dota 2! Lobby ID: ${lobby.botAccountId}`);
+      } catch (botError) {
+        console.error('[Bot API] Ошибка при запуске игры в Dota 2:', botError.message);
+        return res.status(500).json({ 
+          message: 'Не удалось запустить игру в Dota 2',
+          error: botError.message 
+        });
+      }
+    }
+
     lobby.status = 'in_progress';
-    lobby.countdownStartTime = null; // Clear the timer just in case
+    lobby.countdownStartTime = null;
+    lobby.startedAt = new Date(); // Добавляем временную метку старта
 
     const updatedLobby = await lobby.save();
 
-        // --- 👇 ОТПРАВКА ОБНОВЛЕНИЯ ЧЕРЕЗ WEBSOCKET 👇 ---
-    const io = req.app.get('socketio'); // Получаем io из app
-    io.in(req.params.id).emit('lobbyUpdated', updatedLobby.toObject()); // Отправляем всем в "комнате"
+    const io = req.app.get('socketio');
+    io.in(req.params.id).emit('lobbyUpdated', updatedLobby.toObject());
 
     res.status(200).json(updatedLobby.toObject());
 
-  } catch (error)
-    {
+  } catch (error) {
     console.error("Error starting game:", error);
     res.status(500).json({ message: 'Server error' });
   }
@@ -439,7 +489,6 @@ router.post('/:id/declare-winner', async (req, res) => {
     const { hostId, winningTeam } = req.body;
     const lobby = await Lobby.findOne({ id: req.params.id });
 
-    // --- Проверки остаются без изменений ---
     if (!lobby) return res.status(404).json({ message: "Лобби не найдено" });
     if (String(lobby.host.id) !== String(hostId)) {
       return res.status(403).json({ message: "Только хост может определять победителя!" });
@@ -452,24 +501,19 @@ router.post('/:id/declare-winner', async (req, res) => {
     const winners = lobby.slots.filter(s => s.user && s.team === winningTeam).map(s => s.user);
     const losers = lobby.slots.filter(s => s.user && s.team !== winningTeam).map(s => s.user);
     
-    // --- 👇 НОВАЯ И ПРАВИЛЬНАЯ ЛОГИКА РАСПРЕДЕЛЕНИЯ ПРИЗОВ 👇 ---
-
-    // 1. Списываем деньги с проигравших
     for (const loser of losers) {
       await User.updateOne({ id: loser.id }, { $inc: { balance: -entryFee } });
       console.log(`[Списано] С игрока ${loser.username} списано ${entryFee}$.`);
     }
 
-    // 2. Начисляем деньги победителям (каждый победитель получает взнос одного проигравшего)
-    // Эта логика работает для игр 1v1, 2v2, 5v5 и т.д.
     const amountToWin = entryFee * (losers.length / winners.length);
     for (const winner of winners) {
       await User.updateOne({ id: winner.id }, { $inc: { balance: amountToWin } });
       console.log(`[Начислено] Игроку ${winner.username} начислено ${amountToWin}$.`);
     }
     
-    // 3. Обновляем статус лобби
     lobby.status = 'finished';
+    lobby.finishedAt = new Date(); // Добавляем временную метку завершения
     const updatedLobby = await lobby.save();
 
     const io = req.app.get('socketio');
@@ -477,7 +521,7 @@ router.post('/:id/declare-winner', async (req, res) => {
 
     res.status(200).json({ 
       message: `Команда ${winningTeam} победила!`, 
-      lobby: updatedLobby.toObject() // Добавляем .toObject() и здесь
+      lobby: updatedLobby.toObject()
     });
 
   } catch (error) {
