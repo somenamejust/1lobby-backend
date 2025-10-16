@@ -369,10 +369,19 @@ router.put('/:id/start', async (req, res) => {
     const lobbyId = req.params.id;
     const { hostId } = req.body;
 
+    console.log('========== START GAME ==========');
+    console.log('Lobby ID:', lobbyId);
+    console.log('Host ID:', hostId);
+
     const lobby = await Lobby.findOne({ id: lobbyId });
     if (!lobby) {
       return res.status(404).json({ message: "Lobby not found" });
     }
+
+    console.log('✅ Lobby found:', lobby.title);
+    console.log('Game:', lobby.game);
+    console.log('BotAccountId:', lobby.botAccountId);
+    console.log('Slots:', JSON.stringify(lobby.slots, null, 2));
 
     if (String(lobby.host.id) !== String(hostId)) {
       return res.status(403).json({ message: "Only the host can start the game!" });
