@@ -174,6 +174,19 @@ class BotService {
 
     return results;
   }
+
+  async releaseLobby(lobbyId, serverUrl) {
+    try {
+        const response = await axios.post(`${serverUrl}/lobby/${lobbyId}/release`, {}, {
+        timeout: 5000
+        });
+        return response.data;
+    } catch (error) {
+        console.error('Failed to release lobby:', error.response?.data || error.message);
+        throw new Error('Failed to release lobby');
+    }
+  }
+
 }
 
 module.exports = new BotService();

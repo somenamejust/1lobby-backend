@@ -530,6 +530,21 @@ router.post('/:id/declare-winner', async (req, res) => {
     lobby.finishedAt = new Date(); // Добавляем временную метку завершения
     const updatedLobby = await lobby.save();
 
+    // 🆕 ДОБАВЬ ЭТО: Освобождаем бота
+    if (lobby.botAccountId && lobby.botServerId) {
+      try {
+        // Уведомляем Bot API что можно освободить бота
+        // (в Go API нужно будет добавить endpoint для этого)
+        const server = botService.getAvailableBotServer();
+        await botService.releaseLobby(lobby.botAccountId, server.url);
+        console.log(`[Bot] Лобби ${lobby.id} завершено, освобождаем бота ${lobby.botAccountId}`);
+        
+        // Пока что просто логируем, реализацию добавим ниже
+      } catch (error) {
+        console.error('[Bot] Ошибка освобождения бота:', error);
+      }
+    }
+
     const io = req.app.get('socketio');
     io.in(req.params.id).emit('lobbyUpdated', updatedLobby.toObject());
 
