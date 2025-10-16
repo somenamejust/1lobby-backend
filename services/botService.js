@@ -60,11 +60,11 @@ class BotService {
         region: lobbyData.region || 8, // Europe West
         gameMode: lobbyData.gameMode || 23, // All Pick
         radiantPlayers: lobbyData.radiantPlayers.map(p => ({
-          steamId: parseInt(p.steamId),
+          steamId: p.steamId,
           slot: p.slot || 1
         })),
         direPlayers: lobbyData.direPlayers.map(p => ({
-          steamId: parseInt(p.steamId),
+          steamId: p.steamId,
           slot: p.slot || 1
         }))
       }, {
