@@ -60,11 +60,11 @@ class BotService {
         region: lobbyData.region || 8, // Europe West
         gameMode: lobbyData.gameMode || 23, // All Pick
         radiantPlayers: lobbyData.radiantPlayers.map(p => ({
-          steamId: p.steamId,
+          steamId: p.steamId, // Оставляем как строку!
           slot: p.slot || 1
         })),
         direPlayers: lobbyData.direPlayers.map(p => ({
-          steamId: p.steamId,
+          steamId: p.steamId, // Оставляем как строку!
           slot: p.slot || 1
         }))
       }, {
@@ -127,6 +127,21 @@ class BotService {
     } catch (error) {
       console.error('Failed to get lobby status:', error.response?.data || error.message);
       throw new Error('Failed to get lobby status');
+    }
+  }
+
+  /**
+   * Проверить сколько игроков зашло в лобби
+   */
+  async checkLobbyPlayers(lobbyId, serverUrl) {
+    try {
+      const response = await axios.get(`${serverUrl}/lobby/${lobbyId}/players`, {
+        timeout: 5000
+      });
+      return response.data;
+    } catch (error) {
+      console.error('Failed to check lobby players:', error.response?.data || error.message);
+      throw new Error('Failed to check lobby players');
     }
   }
 

@@ -455,11 +455,26 @@ router.put('/:id/start', async (req, res) => {
     }
 
     // 🆕 ПОТОМ ЗАПУСКАЕМ ИГРУ (если лобби уже было создано)
+    // ПОСЛЕ создания лобби в Dota 2 (если lobby.botAccountId существует)
     if (lobby.game === 'Dota 2' && lobby.botAccountId) {
       try {
         const server = botService.getAvailableBotServer();
+        
+        // 🆕 Ждем 15 секунд чтобы игроки успели зайти
+        console.log('[Bot API] Ожидание 15 секунд для входа игроков...');
+        await new Promise(resolve => setTimeout(resolve, 15000));
+        
+        // 🆕 Проверяем кто зашел
+        console.log('[Bot API] Проверка игроков в лобби...');
+        const playersStatus = await botService.checkLobbyPlayers(lobby.botAccountId, server.url);
+        
+        console.log(`[Bot API] В лобби: ${playersStatus.playersInLobby?.length || 0} из ${playersStatus.expectedPlayers} игроков`);
+        console.log(`[Bot API] Все зашли: ${playersStatus.allJoined}`);
+        
+        // 🆕 Запускаем игру (независимо от того зашли все или нет - для тестирования)
         await botService.startGame(lobby.botAccountId, server.url);
         console.log(`[Bot API] Игра запущена в Dota 2!`);
+        
       } catch (botError) {
         console.error('[Bot API] Ошибка запуска игры в Dota 2:', botError.message);
       }
