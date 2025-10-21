@@ -32,6 +32,11 @@ const lobbySchema = new mongoose.Schema({
   status: { type: String, default: 'waiting' },
   countdownStartTime: { type: Number, default: null },
   players: { type: Number, default: 1 },
+
+  matchId: { type: Number },       // Match ID из Dota 2
+  winner: { type: String },        // 'A' или 'B'
+  duration: { type: Number },      // Секунды
+  cancelReason: { type: String },   // Причина отмены
   
   slots: [slotSchema],
   spectators: [userSubSchema],
