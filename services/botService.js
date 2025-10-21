@@ -146,6 +146,36 @@ class BotService {
   }
 
   /**
+   * 🆕 Получить результат матча
+   */
+  async getMatchResult(lobbyId, serverUrl) {
+    try {
+      const response = await axios.get(`${serverUrl}/lobby/${lobbyId}/result`, {
+        timeout: 5000
+      });
+      return response.data;
+    } catch (error) {
+      console.error('Failed to get match result:', error.response?.data || error.message);
+      throw new Error('Failed to get match result');
+    }
+  }
+
+  /**
+   * Освободить лобби и бота
+   */
+  async releaseLobby(lobbyId, serverUrl) {
+    try {
+      const response = await axios.post(`${serverUrl}/lobby/${lobbyId}/release`, {}, {
+        timeout: 5000
+      });
+      return response.data;
+    } catch (error) {
+      console.error('Failed to release lobby:', error.response?.data || error.message);
+      throw new Error('Failed to release lobby');
+    }
+  }
+
+  /**
    * Health check всех Bot Servers
    */
   async healthCheckAll() {
@@ -174,19 +204,6 @@ class BotService {
 
     return results;
   }
-
-  async releaseLobby(lobbyId, serverUrl) {
-    try {
-        const response = await axios.post(`${serverUrl}/lobby/${lobbyId}/release`, {}, {
-        timeout: 5000
-        });
-        return response.data;
-    } catch (error) {
-        console.error('Failed to release lobby:', error.response?.data || error.message);
-        throw new Error('Failed to release lobby');
-    }
-  }
-
 }
 
 module.exports = new BotService();
