@@ -271,33 +271,50 @@ router.put('/:id/vacate', async (req, res) => {
 
 router.put('/:id/ready', async (req, res) => {
   try {
+    const lobbyId = req.params.id;
     const { userId } = req.body;
-    const lobby = await Lobby.findOne({ id: req.params.id });
 
-    if (!lobby) return res.status(404).json({ message: "Лобби не найдено" });
-
-    const targetSlotIndex = lobby.slots.findIndex(s => s.user?.id === userId);
-    if (targetSlotIndex === -1) {
-      return res.status(404).json({ message: "Игрок не найден в слотах" });
+    if (!userId) {
+      return res.status(400).json({ message: 'Не указан ID пользователя' });
     }
 
-    lobby.slots[targetSlotIndex].user.isReady = !lobby.slots[targetSlotIndex].user.isReady;
+    const lobby = await Lobby.findOne({ id: lobbyId });
+    if (!lobby) {
+      return res.status(404).json({ message: "Лобби не найдено" });
+    }
+
+    const slot = lobby.slots.find(s => s.user?.id === userId);
+    if (!slot || !slot.user) {
+      return res.status(404).json({ message: "Игрок не найден в этом лобби" });
+    }
+
+    slot.user.isReady = !slot.user.isReady;
+
+    const playersInSlots = lobby.slots.filter(s => s.user);
+    const areAllPlayersReady = playersInSlots.length === lobby.maxPlayers && playersInSlots.every(p => p.user.isReady);
+
+    if (areAllPlayersReady) {
+      lobby.status = 'countdown';
+      lobby.countdownStartTime = Date.now();
+      console.log(`[Лобби ${lobby.id}] Все готовы! Запуск отсчета.`);
+    } else {
+      lobby.status = 'waiting';
+      lobby.countdownStartTime = null;
+      console.log(`[Лобби ${lobby.id}] Отмена готовности. Отсчет остановлен.`);
+    }
+
     lobby.markModified('slots');
 
-    const allReady = lobby.slots.every(s => !s.user || s.user.isReady);
-    if (allReady && lobby.status === 'waiting') {
-      lobby.status = 'ready';
-      lobby.countdownStartTime = new Date(Date.now() + 60000);
-    }
-
     const updatedLobby = await lobby.save();
+
     const io = req.app.get('socketio');
     io.in(req.params.id).emit('lobbyUpdated', updatedLobby.toObject());
+
     res.status(200).json(updatedLobby.toObject());
 
   } catch (error) {
-    console.error("Error toggling ready:", error);
-    res.status(500).json({ message: 'Server error' });
+    console.error("Ошибка при смене статуса готовности:", error);
+    res.status(500).json({ message: 'Ошибка сервера' });
   }
 });
 
