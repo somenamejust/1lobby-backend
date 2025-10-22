@@ -235,6 +235,40 @@ router.put('/:id/occupy', async (req, res) => {
   }
 });
 
+router.put('/:id/vacate', async (req, res) => {
+  try {
+    const { userId } = req.body;
+    const lobby = await Lobby.findOne({ id: req.params.id });
+
+    if (!lobby) return res.status(404).json({ message: "Лобби не найдено" });
+
+    const slotIndex = lobby.slots.findIndex(s => s.user?.id === userId);
+    if (slotIndex === -1) return res.status(404).json({ message: "Игрок не найден в слоте" });
+
+    const userToMove = lobby.slots[slotIndex].user;
+
+    lobby.slots[slotIndex].user = null;
+    if (!lobby.spectators.some(spec => spec.id === userId)) {
+        lobby.spectators.push(userToMove);
+    }
+    lobby.players = lobby.slots.filter(s => s.user).length;
+
+    lobby.markModified('slots');
+    lobby.markModified('spectators');
+
+    const updatedLobby = await lobby.save();
+
+    const io = req.app.get('socketio');
+    io.in(req.params.id).emit('lobbyUpdated', updatedLobby.toObject());
+
+    res.status(200).json(updatedLobby.toObject());
+
+  } catch (error) {
+    console.error("Ошибка при освобождении слота:", error);
+    res.status(500).json({ message: 'Ошибка сервера' });
+  }
+});
+
 router.put('/:id/ready', async (req, res) => {
   try {
     const { userId } = req.body;
