@@ -235,7 +235,7 @@ router.put('/:id/occupy', async (req, res) => {
   }
 });
 
-router.put('/:id/toggle-ready', async (req, res) => {
+router.put('/:id/ready', async (req, res) => {
   try {
     const { userId } = req.body;
     const lobby = await Lobby.findOne({ id: req.params.id });
