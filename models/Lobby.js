@@ -48,7 +48,10 @@ const lobbySchema = new mongoose.Schema({
   botServerId: { type: String, default: null },
   botAccountId: { type: String, default: null },
   startedAt: { type: Date, default: null },
-  finishedAt: { type: Date, default: null }
+  finishedAt: { type: Date, default: null },
+
+  // 🆕 ID РЕЖИМА ИГРЫ ДЛЯ DOTA 2
+  dotaGameMode: { type: Number, default: 22 } // По умолчанию All Pick (22)
 });
 
 const Lobby = mongoose.model('Lobby', lobbySchema);

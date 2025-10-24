@@ -390,6 +390,7 @@ router.put('/:id/start', async (req, res) => {
 
     console.log('✅ Lobby found:', lobby.title);
     console.log('Game:', lobby.game);
+    console.log('Mode:', lobby.mode);
     console.log('BotAccountId:', lobby.botAccountId);
     console.log('Slots:', JSON.stringify(lobby.slots, null, 2));
 
@@ -446,7 +447,7 @@ router.put('/:id/start', async (req, res) => {
             name: lobby._id.toString(),
             password: lobby.password || '',
             region: 8,
-            gameMode: 23,
+            gameMode: lobby.dotaGameMode || 22,
             radiantPlayers,
             direPlayers
           });

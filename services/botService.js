@@ -58,7 +58,7 @@ class BotService {
         lobbyName: lobbyData.name,
         password: lobbyData.password || '',
         region: lobbyData.region || 8, // Europe West
-        gameMode: lobbyData.gameMode || 23, // All Pick
+        gameMode: lobbyData.gameMode || 22, // All Pick
         radiantPlayers: lobbyData.radiantPlayers.map(p => ({
           steamId: p.steamId, // Оставляем как строку!
           slot: p.slot || 1
