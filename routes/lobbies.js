@@ -537,7 +537,7 @@ router.post('/:id/match-result', async (req, res) => {
     console.log('========================================');
 
     // Находим лобби
-    const lobby = await Lobby.findOne({ id: req.params.id });
+    const lobby = await Lobby.findById( req.params.id );
     
     if (!lobby) {
       console.error(`❌ [Match Result] Лобби ${req.params.id} не найдено`);
@@ -608,13 +608,7 @@ router.post('/:id/match-result', async (req, res) => {
 
     // Уведомляем игроков через Socket.IO
     const io = req.app.get('socketio');
-    io.in(req.params.id).emit('gameFinished', {
-      lobbyId: lobby.id,
-      winner: lobby.winner,
-      matchId: lobby.matchId,
-      status: lobby.status,
-      duration: lobby.duration
-    });
+    io.in(lobby.id.toString()).emit('lobbyUpdated', freshLobby.toObject());
 
     console.log(`✅ [Match Result] Результат успешно обработан для лобби ${lobby.id}`);
     console.log('========================================\n');
@@ -716,7 +710,7 @@ async function distributePrizes(lobby, winningTeam) {
     return;
   }
 
-  const totalPrizePool = lobby.entryFee * lobby.slots.filter(s => s.user).length;
+  const totalPrizePool = lobby.entryFee * losers.length;
   const prizePerWinner = totalPrizePool / winners.length;
 
   console.log(`\n💵 [Prize Pool]`);
