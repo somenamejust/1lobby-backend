@@ -537,7 +537,8 @@ router.put('/:id/start', async (req, res) => {
 
 router.post('/:id/match-result', async (req, res) => {
   try {
-    const { lobbyId, botAccountId, matchId, winner, duration, timestamp } = req.body;
+    const lobbyId = req.params.id;
+    const { matchId, winner, duration, timestamp, lobbyAccountId, botAccountId } = req.body;
     
     console.log('========================================');
     console.log('🏁 [Match Result] Получен результат матча');
@@ -550,6 +551,13 @@ router.post('/:id/match-result', async (req, res) => {
     console.log(`Duration: ${duration}s`);
     console.log(`Timestamp: ${new Date(timestamp * 1000).toISOString()}`);
     console.log('========================================');
+
+        // 🆕 ВАЛИДАЦИЯ timestamp
+    let validTimestamp = timestamp;
+    if (!timestamp || isNaN(new Date(timestamp).getTime())) {
+      console.log('⚠️ [Match Result] Невалидный timestamp, используем текущее время');
+      validTimestamp = new Date().toISOString();
+    }
 
     // Находим лобби
     const lobby = await Lobby.findById(req.params.id);
@@ -654,18 +662,23 @@ router.post('/:id/match-result', async (req, res) => {
 async function handleMatchComplete(lobby, winningTeam, matchId, duration) {
   console.log(`\n💰 [Prize Distribution] Начинаем распределение призов`);
   console.log(`   Лобби: ${lobby.id}`);
-  console.log(`   Победитель: Команда ${winningTeam}`);
-
-  // 🆕 Конвертируем radiant/dire в названия команд из лобби
+  console.log(`   Игра: ${lobby.game}`);
+  console.log(`   Победитель (от бота): ${winningTeam}`);
+  
+  // 🆕 ПРАВИЛЬНАЯ КОНВЕРТАЦИЯ
   let actualWinningTeam = winningTeam;
   
   if (lobby.game === 'Dota 2') {
-    // Для Dota 2: бот отправляет 'radiant' или 'dire'
-    // Нужно конвертировать в 'Radiant' или 'Dire' (с заглавной)
-    actualWinningTeam = winningTeam.charAt(0).toUpperCase() + winningTeam.slice(1);
-    console.log(`   Победитель (конвертирован): ${actualWinningTeam}`);
+    // Для Dota 2: бот отправляет 'radiant' или 'dire' (lowercase)
+    // Конвертируем в 'Radiant' или 'Dire' (с заглавной буквы)
+    if (winningTeam.toLowerCase() === 'radiant') {
+      actualWinningTeam = 'Radiant';
+    } else if (winningTeam.toLowerCase() === 'dire') {
+      actualWinningTeam = 'Dire';
+    }
+    console.log(`   Победитель (конвертирован для Dota 2): ${actualWinningTeam}`);
   }
-
+  
   console.log(`   Match ID: ${matchId}`);
   
   // Сохраняем результат
@@ -676,7 +689,7 @@ async function handleMatchComplete(lobby, winningTeam, matchId, duration) {
   lobby.finishedAt = new Date();
 
   // Распределяем призы
-  await distributePrizes(lobby, winningTeam);
+  await distributePrizes(lobby, actualWinningTeam);
 
   await lobby.save();
   
