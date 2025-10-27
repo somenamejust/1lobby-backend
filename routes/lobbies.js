@@ -418,8 +418,8 @@ router.put('/:id/start', async (req, res) => {
         console.log('[Bot API] Создание Dota 2 лобби перед стартом...');
         
         // Собираем игроков из слотов
-        const radiantSlots = lobby.slots.filter(s => s.user && s.team === 'A');
-        const direSlots = lobby.slots.filter(s => s.user && s.team === 'B');
+        const radiantSlots = lobby.slots.filter(s => s.user && s.team === 'Radiant');
+        const direSlots = lobby.slots.filter(s => s.user && s.team === 'Dire');
 
         // Проверяем Steam ID
         const radiantPlayers = [];
@@ -456,7 +456,7 @@ router.put('/:id/start', async (req, res) => {
           const botResult = await botService.createDotaLobby({
             name: lobby._id.toString(),
             password: lobby.password || '',
-            region: 8,
+            region: lobby.dotaRegion || 3,
             gameMode: lobby.dotaGameMode || 22,
             radiantPlayers,
             direPlayers
@@ -655,11 +655,22 @@ async function handleMatchComplete(lobby, winningTeam, matchId, duration) {
   console.log(`\n💰 [Prize Distribution] Начинаем распределение призов`);
   console.log(`   Лобби: ${lobby.id}`);
   console.log(`   Победитель: Команда ${winningTeam}`);
+
+  // 🆕 Конвертируем radiant/dire в названия команд из лобби
+  let actualWinningTeam = winningTeam;
+  
+  if (lobby.game === 'Dota 2') {
+    // Для Dota 2: бот отправляет 'radiant' или 'dire'
+    // Нужно конвертировать в 'Radiant' или 'Dire' (с заглавной)
+    actualWinningTeam = winningTeam.charAt(0).toUpperCase() + winningTeam.slice(1);
+    console.log(`   Победитель (конвертирован): ${actualWinningTeam}`);
+  }
+
   console.log(`   Match ID: ${matchId}`);
   
   // Сохраняем результат
   lobby.matchId = matchId;
-  lobby.winner = winningTeam;
+  lobby.winner = actualWinningTeam;
   lobby.duration = duration;
   lobby.status = 'finished';
   lobby.finishedAt = new Date();

@@ -25,6 +25,10 @@ const lobbySchema = new mongoose.Schema({
   game: { type: String, required: true },
   mode: { type: String, required: true },
   region: { type: String, required: true },
+  
+  dotaGameMode: { type: Number, default: 22 }, // По умолчанию All Pick (22)
+  dotaRegion: { type: Number, default: null },
+
   type: { type: String, default: 'public' },
   password: { type: String, default: null },
   entryFee: { type: Number, default: 0 },
@@ -33,10 +37,10 @@ const lobbySchema = new mongoose.Schema({
   countdownStartTime: { type: Number, default: null },
   players: { type: Number, default: 1 },
 
-  matchId: { type: Number },       // Match ID из Dota 2
-  winner: { type: String },        // 'A' или 'B'
-  duration: { type: Number },      // Секунды
-  cancelReason: { type: String },   // Причина отмены
+  matchId: { type: String, default: null },
+  winner: { type: String, default: null },      // 'Radiant' или 'Dire' для Dota 2
+  duration: { type: Number, default: null },
+  cancelReason: { type: String, default: null },
   
   slots: [slotSchema],
   spectators: [userSubSchema],
@@ -49,9 +53,6 @@ const lobbySchema = new mongoose.Schema({
   botAccountId: { type: String, default: null },
   startedAt: { type: Date, default: null },
   finishedAt: { type: Date, default: null },
-
-  // 🆕 ID РЕЖИМА ИГРЫ ДЛЯ DOTA 2
-  dotaGameMode: { type: Number, default: 22 } // По умолчанию All Pick (22)
 });
 
 const Lobby = mongoose.model('Lobby', lobbySchema);
