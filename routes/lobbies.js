@@ -117,6 +117,16 @@ router.put('/:id/leave', async (req, res) => {
 
     if (!lobby) return res.status(200).json({ message: "Lobby already deleted." });
 
+    // 🆕 НЕ ПОЗВОЛЯЕМ ВЫХОДИТЬ ИЗ ЗАВЕРШЕННЫХ ЛОББИ
+    if (lobby.status === 'finished' || lobby.status === 'cancelled') {
+      console.log(`[Leave] Игрок ${userId} пытается выйти из завершенного лобби ${lobby.id}`);
+      // Просто возвращаем успех, но не меняем лобби
+      return res.status(200).json({ 
+        message: "Cannot leave finished lobby", 
+        lobby: lobby.toObject() 
+      });
+    }
+
     const isHostLeaving = String(lobby.host.id) === String(userId);
 
     if (isHostLeaving) {
