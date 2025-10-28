@@ -547,7 +547,7 @@ router.post('/:id/match-result', async (req, res) => {
     console.log(`Lobby ID (body): ${lobbyId}`);
     console.log(`Bot Account (body): ${botAccountId}`);
     console.log(`Match ID: ${matchId}`);
-    console.log(`Winner: ${winner}`);
+    console.log(`Winner (RAW): ${winner}`);
     console.log(`Duration: ${duration}s`);
     console.log(`Timestamp: ${new Date(timestamp * 1000).toISOString()}`);
     console.log('========================================');
@@ -575,7 +575,7 @@ router.post('/:id/match-result', async (req, res) => {
     console.log(`🔍 [Debug] Bot Account из запроса: ${botAccountId}`);
 
     // 🔧 ВРЕМЕННО: СМЯГЧАЕМ ПРОВЕРКУ
-    if (lobby.botAccountId && lobby.botAccountId !== botAccountId) {
+    if (lobby.botAccountId && botAccountId && lobby.botAccountId !== botAccountId) {
       console.warn(`⚠️ [Match Result] Bot Account ID не совпадает, но продолжаем...`);
       console.warn(`   Ожидался: ${lobby.botAccountId}`);
       console.warn(`   Получен: ${botAccountId}`);
@@ -604,7 +604,18 @@ router.post('/:id/match-result', async (req, res) => {
     } else if (winner === 'radiant' || winner === 'dire') {
       console.log(`🏆 [Match Result] Команда ${winner} победила в лобби ${lobby.id}`);
       
-      const winningTeam = winner === 'radiant' ? 'A' : 'B';
+      let winningTeam;
+      
+      if (lobby.game === 'Dota 2') {
+        // Для Dota 2: конвертируем в названия команд из слотов
+        winningTeam = winner === 'radiant' ? 'Radiant' : 'Dire';
+        console.log(`🔄 [Match Result] Конвертировали для Dota 2: "${winner}" → "${winningTeam}"`);
+      } else {
+        // Для других игр: используем A/B
+        winningTeam = winner === 'radiant' ? 'A' : 'B';
+        console.log(`🔄 [Match Result] Конвертировали для ${lobby.game}: "${winner}" → "${winningTeam}"`);
+      }
+      
       await handleMatchComplete(lobby, winningTeam, matchId, duration);
       
     } else {
@@ -616,7 +627,7 @@ router.post('/:id/match-result', async (req, res) => {
     }
 
     // Освобождаем бота
-    console.log(`🤖 [Match Result] Освобождаем бота ${botAccountId}...`);
+    console.log(`🤖 [Match Result] Освобождаем бота ${botAccountId || lobby.botAccountId}...`);
     try {
       const server = botService.getAvailableBotServer();
       await botService.releaseLobby(lobby.botAccountId || botAccountId, server.url);
@@ -664,32 +675,17 @@ async function handleMatchComplete(lobby, winningTeam, matchId, duration) {
   console.log(`   Лобби: ${lobby.id}`);
   console.log(`   Игра: ${lobby.game}`);
   console.log(`   Победитель (от бота): ${winningTeam}`);
-  
-  // 🆕 ПРАВИЛЬНАЯ КОНВЕРТАЦИЯ
-  let actualWinningTeam = winningTeam;
-  
-  if (lobby.game === 'Dota 2') {
-    // Для Dota 2: бот отправляет 'radiant' или 'dire' (lowercase)
-    // Конвертируем в 'Radiant' или 'Dire' (с заглавной буквы)
-    if (winningTeam.toLowerCase() === 'radiant') {
-      actualWinningTeam = 'Radiant';
-    } else if (winningTeam.toLowerCase() === 'dire') {
-      actualWinningTeam = 'Dire';
-    }
-    console.log(`   Победитель (конвертирован для Dota 2): ${actualWinningTeam}`);
-  }
-  
   console.log(`   Match ID: ${matchId}`);
   
   // Сохраняем результат
   lobby.matchId = matchId;
-  lobby.winner = actualWinningTeam;
+  lobby.winner = winningTeam;
   lobby.duration = duration;
   lobby.status = 'finished';
   lobby.finishedAt = new Date();
 
   // Распределяем призы
-  await distributePrizes(lobby, actualWinningTeam);
+  await distributePrizes(lobby, winningTeam);
 
   await lobby.save();
   
@@ -739,55 +735,40 @@ async function handleMatchCancelled(lobby, reason = 'Game ended abnormally or wa
  * Распределяет призы между победителями
  */
 async function distributePrizes(lobby, winningTeam) {
+  console.log(`\n💸 [Prizes] Начинаем распределение`);
+  console.log(`   Команда-победитель: ${winningTeam}`);
+  console.log(`   Ставка: $${lobby.entryFee}`);
+
+  const entryFee = lobby.entryFee;
+  
+  // Находим всех игроков
   const winners = lobby.slots.filter(s => s.user && s.team === winningTeam).map(s => s.user);
   const losers = lobby.slots.filter(s => s.user && s.team !== winningTeam).map(s => s.user);
 
+  console.log(`   Победителей: ${winners.length}`);
+  console.log(`   Проигравших: ${losers.length}`);
+
   if (winners.length === 0) {
-    console.error(`❌ [Prizes] Нет победителей в команде ${winningTeam}!`);
+    console.log(`❌ [Prizes] Нет победителей в команде ${winningTeam}!`);
     return;
   }
 
-  const totalPrizePool = lobby.entryFee * losers.length;
-  const prizePerWinner = totalPrizePool / winners.length;
-
-  console.log(`\n💵 [Prize Pool]`);
-  console.log(`   Общий фонд: $${totalPrizePool}`);
-  console.log(`   Победителей: ${winners.length}`);
-  console.log(`   Проигравших: ${losers.length}`);
-  console.log(`   Приз на победителя: $${prizePerWinner.toFixed(2)}`);
-  console.log('');
-
-  // Списываем со счетов проигравших
+  // Списываем с проигравших
   for (const loser of losers) {
-    await User.updateOne(
-      { id: loser.id }, 
-      { 
-        $inc: { 
-          balance: -lobby.entryFee,
-          losses: 1,
-          gamesPlayed: 1
-        } 
-      }
-    );
-    console.log(`   ❌ ${loser.username}: -$${lobby.entryFee} (проигрыш)`);
+    await User.updateOne({ id: loser.id }, { $inc: { balance: -entryFee } });
+    console.log(`   💸 Списано $${entryFee} с ${loser.username}`);
   }
 
   // Начисляем победителям
-  for (const winner of winners) {
-    await User.updateOne(
-      { id: winner.id }, 
-      { 
-        $inc: { 
-          balance: prizePerWinner,
-          wins: 1,
-          gamesPlayed: 1
-        } 
-      }
-    );
-    console.log(`   ✅ ${winner.username}: +$${prizePerWinner.toFixed(2)} (победа)`);
-  }
+  const totalPrize = entryFee * losers.length;
+  const amountPerWinner = totalPrize / winners.length;
   
-  console.log('');
+  for (const winner of winners) {
+    await User.updateOne({ id: winner.id }, { $inc: { balance: amountPerWinner } });
+    console.log(`   💰 Начислено $${amountPerWinner.toFixed(2)} игроку ${winner.username}`);
+  }
+
+  console.log(`✅ [Prizes] Распределение завершено\n`);
 }
 
 /**
