@@ -401,15 +401,22 @@ router.put('/:id/start', async (req, res) => {
     console.log('✅ Lobby found:', lobby.title);
     console.log('Game:', lobby.game);
     console.log('Mode:', lobby.mode);
+    console.log('Current Status:', lobby.status);
     console.log('BotAccountId:', lobby.botAccountId);
     console.log('Slots:', JSON.stringify(lobby.slots, null, 2));
+
+    // 🆕 ПРОВЕРКА: Если игра уже идет, не создавай новое лобби!
+    if (lobby.status === 'in_progress') {
+      console.log('⚠️ [Start Game] Игра уже запущена!');
+      return res.status(400).json({ message: "Game already in progress" });
+    }
 
     if (String(lobby.host.id) !== String(hostId)) {
       return res.status(403).json({ message: "Only the host can start the game!" });
     }
 
-    if (lobby.status === 'in_progress' || lobby.status === 'finished') {
-        return res.status(400).json({ message: "The game has already started or is finished." });
+    if (lobby.status === 'finished') {
+        return res.status(400).json({ message: "The game has already finished." });
     }
 
     // СНАЧАЛА СОЗДАЕМ ЛОББИ В DOTA 2
@@ -543,6 +550,8 @@ router.post('/:id/match-result', async (req, res) => {
     console.log('========================================');
     console.log('🏁 [Match Result] Получен результат матча');
     console.log('========================================');
+    console.log('📍 Endpoint:', req.method, req.originalUrl);
+    console.log('🕐 Timestamp:', new Date().toISOString());
     console.log(`Lobby ID (URL): ${req.params.id}`);
     console.log(`Lobby ID (body): ${lobbyId}`);
     console.log(`Bot Account (body): ${botAccountId}`);
