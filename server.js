@@ -13,7 +13,7 @@ const Lobby = require('./models/Lobby');
 const authRoutes = require('./routes/auth');
 const userRoutes = require('./routes/users');
 const lobbyRoutes = require('./routes/lobbies');
-const botService = require('./services/botService');
+const botService = require('./services/DotaBotService');
 
 // Инициализация
 const app = express();
@@ -104,7 +104,7 @@ mongoose.connect(process.env.DATABASE_URL)
       console.log(`🚀 Сервер с Socket.IO запущен на порту ${PORT}`);
     });
 
-    const botService = require('./services/botService');    
+    const botService = require('./services/DotaBotService');    
     setInterval(async () => {
       try {
         const Lobby = require('./models/Lobby');

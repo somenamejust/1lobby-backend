@@ -51,6 +51,11 @@ const lobbySchema = new mongoose.Schema({
   // 🆕 НОВЫЕ ПОЛЯ ДЛЯ ИНТЕГРАЦИИ С BOT API
   botServerId: { type: String, default: null },
   botAccountId: { type: String, default: null },
+
+  cs2ServerId: { type: String, default: null },
+  cs2ServerIp: { type: String, default: null },
+  map: { type: String, default: 'de_dust2' },
+
   startedAt: { type: Date, default: null },
   finishedAt: { type: Date, default: null },
 });

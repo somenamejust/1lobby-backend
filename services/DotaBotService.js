@@ -11,7 +11,7 @@ const BOT_SERVERS = [
   // Добавляй сюда новые серверы по мере роста
 ];
 
-class BotService {
+class DotaBotService {
   /**
    * Получить доступный Bot Server
    */
@@ -206,4 +206,4 @@ class BotService {
   }
 }
 
-module.exports = new BotService();
+module.exports = new DotaBotService();
