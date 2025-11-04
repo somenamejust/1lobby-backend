@@ -55,6 +55,8 @@ const lobbySchema = new mongoose.Schema({
   cs2ServerId: { type: String, default: null },
   cs2ServerIp: { type: String, default: null },
   map: { type: String, default: 'de_dust2' },
+  cs2GameType: { type: Number, default: 0 },
+  cs2GameMode: { type: Number, default: 1 },
 
   startedAt: { type: Date, default: null },
   finishedAt: { type: Date, default: null },
