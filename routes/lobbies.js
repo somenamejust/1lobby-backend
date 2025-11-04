@@ -517,35 +517,42 @@ router.put('/:id/start', async (req, res) => {
     
     // ========== 🆕 CS2 ЛОГИКА (НОВАЯ) ==========
     else if (lobby.game === 'CS2') {
+      let assignedServer = null; // 🆕 Храним ссылку на сервер
+      
       try {
         console.log('[CS2] Запуск CS2 матча...');
         
-        // 1. Получаем свободный сервер
-        const server = cs2ServerPool.assignServer(lobby.id);
-        console.log(`[CS2] Назначен сервер: ${server.id} (${server.host}:${server.port})`);
+        // 🆕 Сохраняем сервер в переменную
+        assignedServer = cs2ServerPool.assignServer(lobby.id);
+        console.log(`[CS2] Назначен сервер: ${assignedServer.id} (${assignedServer.host}:${assignedServer.port})`);
         
-        // 2. Сохраняем в лобби
-        lobby.cs2ServerId = server.id;
-        lobby.cs2ServerIp = `${server.host}:${server.port}`;
+        lobby.cs2ServerId = assignedServer.id;
+        lobby.cs2ServerIp = `${assignedServer.host}:${assignedServer.port}`;
         
-        // 3. Настраиваем сервер
         console.log(`[CS2] Очистка сервера...`);
-        await cs2Service.kickAll(server.host, server.port, server.rconPassword);
+        await cs2Service.kickAll(assignedServer.host, assignedServer.port, assignedServer.rconPassword);
         
         console.log(`[CS2] Установка карты: ${lobby.map || 'de_dust2'}`);
         await cs2Service.setMapAndMode(
-          server.host,
-          server.port,
-          server.rconPassword,
+          assignedServer.host,
+          assignedServer.port,
+          assignedServer.rconPassword,
           lobby.map || 'de_dust2',
-          0, // game_type (0 = Classic)
-          1  // game_mode (1 = Competitive)
+          0, // game_type
+          1  // game_mode
         );
         
         console.log(`[CS2] Сервер настроен! IP: ${lobby.cs2ServerIp}`);
         
       } catch (cs2Error) {
         console.error('[CS2] Ошибка настройки сервера:', cs2Error.message);
+        
+        // 🆕 КРИТИЧНО: Освобождаем сервер при ошибке!
+        if (assignedServer) {
+          console.log(`[CS2] Освобождаем сервер ${assignedServer.id} после ошибки...`);
+          cs2ServerPool.releaseServer(assignedServer.id);
+        }
+        
         return res.status(500).json({ 
           message: `CS2 server error: ${cs2Error.message}` 
         });
