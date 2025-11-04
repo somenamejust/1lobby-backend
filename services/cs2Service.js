@@ -8,34 +8,49 @@ class CS2Service {
   /**
    * Получить RCON соединение (с кешированием)
    */
-  async getConnection(host, port, password) {
-    const key = `${host}:${port}`;
-    
-    // Если уже есть активное соединение - используй его
-    if (this.connections.has(key)) {
-      const conn = this.connections.get(key);
-      if (conn.authenticated) {
-        return conn;
-      }
+    async getConnection(host, port, password) {
+        const key = `${host}:${port}`;
+        
+        // 🆕 ДИАГНОСТИКА
+        console.log('========================================');
+        console.log('[CS2 RCON] Попытка подключения:');
+        console.log(`  Host: ${host}`);
+        console.log(`  Port: ${port}`);
+        console.log(`  Password: ${password.substring(0, 3)}***${password.substring(password.length - 3)}`); // Показываем только начало и конец
+        console.log(`  Password Length: ${password.length}`);
+        console.log('========================================');
+        
+        if (this.connections.has(key)) {
+            const conn = this.connections.get(key);
+            if (conn.authenticated) {
+            console.log('[CS2 RCON] ✅ Используем существующее соединение');
+            return conn;
+            } else {
+            console.log('[CS2 RCON] ⚠️ Старое соединение не авторизовано, создаём новое');
+            }
+        }
+        
+        try {
+            console.log('[CS2 RCON] Подключаемся...');
+            const rcon = await Rcon.connect({
+            host,
+            port,
+            password,
+            timeout: 5000
+            });
+            
+            console.log('[CS2 RCON] ✅ Подключение успешно!');
+            this.connections.set(key, rcon);
+            return rcon;
+            
+        } catch (error) {
+            console.error('[CS2 RCON] ❌ ОШИБКА:');
+            console.error(`  Сообщение: ${error.message}`);
+            console.error(`  Код: ${error.code}`);
+            console.error(`  Детали:`, error);
+            throw new Error(`Cannot connect to CS2 server: ${error.message}`);
+        }
     }
-    
-    // Создай новое
-    try {
-      const rcon = await Rcon.connect({
-        host,
-        port,
-        password,
-        timeout: 5000
-      });
-      
-      this.connections.set(key, rcon);
-      return rcon;
-      
-    } catch (error) {
-      console.error(`[CS2] Failed to connect to ${host}:${port}`, error);
-      throw new Error(`Cannot connect to CS2 server: ${error.message}`);
-    }
-  }
 
   /**
    * Выполнить команду на сервере
