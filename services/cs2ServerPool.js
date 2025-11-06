@@ -5,7 +5,7 @@ class CS2ServerPool {
         id: 'cs2-main',
         host: '134.209.246.42',
         port: 27015,
-        rconPassword: 'ps123if34duU', // 🔴 ЗАМЕНИ на свой!
+        rconPassword: '1lobbyRCON2025', // 🔴 ЗАМЕНИ на свой!
         status: 'available', // available, in_use, offline
         currentLobbyId: null,
         maxPlayers: 10
