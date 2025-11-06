@@ -5,73 +5,135 @@ const cs2ServerPool = require('./cs2ServerPool');
 
 class CS2MatchMonitor {
   constructor() {
-    this.activeMonitors = new Map(); // lobbyId -> intervalId
+    this.activeMonitors = new Map(); // lobbyId -> { intervalId, teamMapping }
   }
 
   /**
    * Начать мониторинг матча
    */
-  startMonitoring(lobbyId, serverHost, serverPort, rconPassword) {
+  startMonitoring(lobbyId, serverHost, serverPort, rconPassword, teamMapping) {
     if (this.activeMonitors.has(lobbyId)) {
       console.log(`[CS2Monitor] Мониторинг для лобби ${lobbyId} уже запущен`);
       return;
     }
 
     console.log(`[CS2Monitor] Запуск мониторинга для лобби ${lobbyId}`);
+    console.log(`[CS2Monitor] Маппинг команд:`, teamMapping);
 
     const intervalId = setInterval(async () => {
       try {
-        await this.checkMatchStatus(lobbyId, serverHost, serverPort, rconPassword);
+        await this.checkMatchStatus(lobbyId, serverHost, serverPort, rconPassword, teamMapping);
       } catch (error) {
-        console.error(`[CS2Monitor] Ошибка мониторинга лобби ${lobbyId}:`, error);
+        console.error(`[CS2Monitor] Ошибка мониторинга лобби ${lobbyId}:`, error.message);
       }
     }, 10000); // Проверяем каждые 10 секунд
 
-    this.activeMonitors.set(lobbyId, intervalId);
+    this.activeMonitors.set(lobbyId, { intervalId, teamMapping });
   }
 
   /**
    * Проверить статус матча
    */
-  async checkMatchStatus(lobbyId, serverHost, serverPort, rconPassword) {
+  async checkMatchStatus(lobbyId, serverHost, serverPort, rconPassword, teamMapping) {
     try {
-      // Получаем статус сервера
-      const status = await cs2Service.executeCommand(
-        serverHost, 
-        serverPort, 
-        rconPassword, 
+      console.log(`[CS2Monitor] Проверка лобби ${lobbyId}...`);
+
+      // Получаем статус игры
+      const gameStatus = await cs2Service.executeCommand(
+        serverHost,
+        serverPort,
+        rconPassword,
+        'mp_teamname_1; mp_teamname_2; mp_teamname_3'
+      );
+
+      console.log(`[CS2Monitor] Ответ сервера:`, gameStatus.substring(0, 500));
+
+      // Пытаемся извлечь счёт через разные методы
+      let ctScore = 0;
+      let tScore = 0;
+
+      // Метод 1: Парсим через status команду
+      const statusOutput = await cs2Service.executeCommand(
+        serverHost,
+        serverPort,
+        rconPassword,
         'status'
       );
 
-      console.log(`[CS2Monitor] Проверка лобби ${lobbyId}...`);
+      // Ищем строки типа: "Team 2 wins: 5" или "Score: CT 3, T 5"
+      const ctMatch = statusOutput.match(/CT[:\s]+(\d+)/i) || statusOutput.match(/Counter-Terrorist[:\s]+(\d+)/i);
+      const tMatch = statusOutput.match(/T[:\s]+(\d+)/i) || statusOutput.match(/Terrorist[:\s]+(\d+)/i);
 
-      // Получаем счёт команд
-      const scoreInfo = await cs2Service.executeCommand(
-        serverHost, 
-        serverPort, 
-        rconPassword, 
-        'mp_teamname_1; mp_teamname_2'
-      );
+      if (ctMatch) ctScore = parseInt(ctMatch[1]);
+      if (tMatch) tScore = parseInt(tMatch[1]);
 
-      // Парсим результат (примерная логика, нужно адаптировать)
-      const ctScore = this.extractScore(status, 'CT');
-      const tScore = this.extractScore(status, 'TERRORIST');
+      console.log(`[CS2Monitor] Счёт после парсинга: CT ${ctScore} - ${tScore} T`);
 
-      console.log(`[CS2Monitor] Счёт: CT ${ctScore} - ${tScore} T`);
+      // Если не получилось - пробуем через mp_teamname
+      if (ctScore === 0 && tScore === 0) {
+        console.log(`[CS2Monitor] Попытка альтернативного парсинга...`);
+        
+        // Используем game_score команду (если доступна)
+        try {
+          const scoreCmd = await cs2Service.executeCommand(
+            serverHost,
+            serverPort,
+            rconPassword,
+            'mp_teamname_1; mp_teamname_2'
+          );
+          
+          // Ищем паттерны типа "Team2: 5 wins"
+          const team2Match = scoreCmd.match(/Team\s*2[^\d]*(\d+)/i);
+          const team3Match = scoreCmd.match(/Team\s*3[^\d]*(\d+)/i);
+          
+          if (team2Match) ctScore = parseInt(team2Match[1]);
+          if (team3Match) tScore = parseInt(team3Match[1]);
+          
+          console.log(`[CS2Monitor] Альтернативный счёт: CT ${ctScore} - ${tScore} T`);
+        } catch (err) {
+          console.log(`[CS2Monitor] Альтернативный парсинг не удался:`, err.message);
+        }
+      }
 
-      // Проверяем условия победы (например, в режиме MR12 - первая команда до 13 раундов)
-      const winScore = 13; // Можно настраивать в зависимости от режима
+      // Проверяем условия победы
+      const maxRounds = 24; // MR12 = 24 раунда максимум
+      const winScore = 13; // Первая команда до 13
 
       let winner = null;
-      if (ctScore >= winScore) {
+
+      // Обычная победа (13 раундов)
+      if (ctScore >= winScore && ctScore >= tScore + 2) {
         winner = 'CT';
-      } else if (tScore >= winScore) {
+      } else if (tScore >= winScore && tScore >= ctScore + 2) {
+        winner = 'T';
+      }
+      
+      // Победа после овертайма (16+ раундов с перевесом в 2)
+      else if (ctScore >= 16 && ctScore >= tScore + 2) {
+        winner = 'CT';
+      } else if (tScore >= 16 && tScore >= ctScore + 2) {
         winner = 'T';
       }
 
       if (winner) {
-        console.log(`[CS2Monitor] Победитель определён: ${winner}`);
-        await this.handleMatchEnd(lobbyId, winner, serverHost, serverPort, rconPassword);
+        console.log(`[CS2Monitor] 🏆 Победитель определён: ${winner} (${ctScore}:${tScore})`);
+        
+        // Определяем какая команда из лобби победила
+        let winningTeam;
+        
+        if (teamMapping.CT === 'A' && winner === 'CT') {
+          winningTeam = 'A';
+        } else if (teamMapping.T === 'A' && winner === 'T') {
+          winningTeam = 'A';
+        } else {
+          winningTeam = 'B';
+        }
+        
+        console.log(`[CS2Monitor] Победила команда из лобби: ${winningTeam}`);
+        
+        await this.handleMatchEnd(lobbyId, winningTeam, serverHost, serverPort, rconPassword);
+      } else {
+        console.log(`[CS2Monitor] Игра продолжается: CT ${ctScore} - ${tScore} T`);
       }
 
     } catch (error) {
@@ -80,21 +142,11 @@ class CS2MatchMonitor {
   }
 
   /**
-   * Извлечь счёт команды из статуса
-   */
-  extractScore(statusOutput, teamName) {
-    // Примерная логика парсинга - нужно адаптировать под реальный вывод
-    const regex = new RegExp(`${teamName}.*?(\\d+)`, 'i');
-    const match = statusOutput.match(regex);
-    return match ? parseInt(match[1]) : 0;
-  }
-
-  /**
    * Обработать завершение матча
    */
   async handleMatchEnd(lobbyId, winningTeam, serverHost, serverPort, rconPassword) {
     try {
-      console.log(`[CS2Monitor] Завершение матча для лобби ${lobbyId}, победитель: ${winningTeam}`);
+      console.log(`[CS2Monitor] 🏁 Завершение матча для лобби ${lobbyId}, победитель: команда ${winningTeam}`);
 
       // Останавливаем мониторинг
       this.stopMonitoring(lobbyId);
@@ -109,6 +161,9 @@ class CS2MatchMonitor {
       // Определяем победителей и проигравших
       const winners = lobby.slots.filter(s => s.user && s.team === winningTeam).map(s => s.user);
       const losers = lobby.slots.filter(s => s.user && s.team !== winningTeam).map(s => s.user);
+
+      console.log(`[CS2Monitor] Победители (команда ${winningTeam}):`, winners.map(w => w.username));
+      console.log(`[CS2Monitor] Проигравшие:`, losers.map(l => l.username));
 
       const entryFee = lobby.entryFee;
 
@@ -130,35 +185,39 @@ class CS2MatchMonitor {
       lobby.finishedAt = new Date();
       await lobby.save();
 
+      // 🆕 КИКАЕМ ВСЕХ ИГРОКОВ С СЕРВЕРА
+      console.log(`[CS2Monitor] Кикаем всех игроков с сервера...`);
+      await cs2Service.kickAll(serverHost, serverPort, rconPassword);
+
+      // 🆕 СБРАСЫВАЕМ КАРТУ И РЕЖИМ
+      console.log(`[CS2Monitor] Сбрасываем сервер на de_dust2...`);
+      await cs2Service.setMapAndMode(
+        serverHost,
+        serverPort,
+        rconPassword,
+        'de_dust2',
+        0, // game_type
+        1  // game_mode (competitive)
+      );
+
       // Освобождаем CS2 сервер
       if (lobby.cs2ServerId) {
         cs2ServerPool.releaseServer(lobby.cs2ServerId);
-        console.log(`[CS2Monitor] Сервер ${lobby.cs2ServerId} освобождён`);
+        console.log(`[CS2Monitor] ✅ Сервер ${lobby.cs2ServerId} освобождён и готов к новой игре`);
       }
 
-      // Кикаем всех игроков
-      await cs2Service.kickAll(serverHost, serverPort, rconPassword);
-
-      // Уведомляем через Socket.IO
-      let io = null;
-
-      // Получаем io при первом вызове
-      function getIO() {
-        if (!io) {
-            io = require('../server').io;
-        }
-        return io;
-      }
+      // Уведомляем через WebSocket
       try {
+        const getIO = require('./getIO'); // Создадим отдельный модуль
         const io = getIO();
         if (io) {
-            io.in(String(lobbyId)).emit('lobbyUpdated', lobby.toObject());
+          io.in(String(lobbyId)).emit('lobbyUpdated', lobby.toObject());
         }
       } catch (error) {
-        console.error('[CS2Monitor] Ошибка отправки через WebSocket:', error);
+        console.error('[CS2Monitor] Ошибка отправки через WebSocket:', error.message);
       }
 
-      console.log(`[CS2Monitor] Матч ${lobbyId} успешно завершён`);
+      console.log(`[CS2Monitor] ✅ Матч ${lobbyId} успешно завершён`);
 
     } catch (error) {
       console.error(`[CS2Monitor] Ошибка обработки завершения матча:`, error);
@@ -169,9 +228,9 @@ class CS2MatchMonitor {
    * Остановить мониторинг
    */
   stopMonitoring(lobbyId) {
-    const intervalId = this.activeMonitors.get(lobbyId);
-    if (intervalId) {
-      clearInterval(intervalId);
+    const monitor = this.activeMonitors.get(lobbyId);
+    if (monitor) {
+      clearInterval(monitor.intervalId);
       this.activeMonitors.delete(lobbyId);
       console.log(`[CS2Monitor] Мониторинг для лобби ${lobbyId} остановлен`);
     }
@@ -181,8 +240,8 @@ class CS2MatchMonitor {
    * Остановить все мониторинги
    */
   stopAll() {
-    for (const [lobbyId, intervalId] of this.activeMonitors) {
-      clearInterval(intervalId);
+    for (const [lobbyId, monitor] of this.activeMonitors) {
+      clearInterval(monitor.intervalId);
       console.log(`[CS2Monitor] Остановлен мониторинг лобби ${lobbyId}`);
     }
     this.activeMonitors.clear();
