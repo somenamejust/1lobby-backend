@@ -31,115 +31,86 @@ class CS2MatchMonitor {
     this.activeMonitors.set(lobbyId, { intervalId, teamMapping });
   }
 
-  /**
-   * Проверить статус матча
-   */
-  async checkMatchStatus(lobbyId, serverHost, serverPort, rconPassword, teamMapping) {
+/**
+ * Проверить статус матча
+ */
+async checkMatchStatus(lobbyId, serverHost, serverPort, rconPassword, teamMapping) {
+  try {
+    console.log(`[CS2Monitor] Проверка лобби ${lobbyId}...`);
+
+    // 🆕 ПРАВИЛЬНЫЙ СПОСОБ: Используем конвары для счёта
+    let team2Score = 0; // CT
+    let team3Score = 0; // T
+
     try {
-      console.log(`[CS2Monitor] Проверка лобби ${lobbyId}...`);
-
-      // Получаем статус игры
-      const gameStatus = await cs2Service.executeCommand(
+      // Получаем счёт команды 2 (CT)
+      const team2Cmd = await cs2Service.executeCommand(
         serverHost,
         serverPort,
         rconPassword,
-        'mp_teamname_1; mp_teamname_2; mp_teamname_3'
+        'mp_teamscore_1'
       );
-
-      console.log(`[CS2Monitor] Ответ сервера:`, gameStatus.substring(0, 500));
-
-      // Пытаемся извлечь счёт через разные методы
-      let ctScore = 0;
-      let tScore = 0;
-
-      // Метод 1: Парсим через status команду
-      const statusOutput = await cs2Service.executeCommand(
-        serverHost,
-        serverPort,
-        rconPassword,
-        'status'
-      );
-
-      // Ищем строки типа: "Team 2 wins: 5" или "Score: CT 3, T 5"
-      const ctMatch = statusOutput.match(/CT[:\s]+(\d+)/i) || statusOutput.match(/Counter-Terrorist[:\s]+(\d+)/i);
-      const tMatch = statusOutput.match(/T[:\s]+(\d+)/i) || statusOutput.match(/Terrorist[:\s]+(\d+)/i);
-
-      if (ctMatch) ctScore = parseInt(ctMatch[1]);
-      if (tMatch) tScore = parseInt(tMatch[1]);
-
-      console.log(`[CS2Monitor] Счёт после парсинга: CT ${ctScore} - ${tScore} T`);
-
-      // Если не получилось - пробуем через mp_teamname
-      if (ctScore === 0 && tScore === 0) {
-        console.log(`[CS2Monitor] Попытка альтернативного парсинга...`);
-        
-        // Используем game_score команду (если доступна)
-        try {
-          const scoreCmd = await cs2Service.executeCommand(
-            serverHost,
-            serverPort,
-            rconPassword,
-            'mp_teamname_1; mp_teamname_2'
-          );
-          
-          // Ищем паттерны типа "Team2: 5 wins"
-          const team2Match = scoreCmd.match(/Team\s*2[^\d]*(\d+)/i);
-          const team3Match = scoreCmd.match(/Team\s*3[^\d]*(\d+)/i);
-          
-          if (team2Match) ctScore = parseInt(team2Match[1]);
-          if (team3Match) tScore = parseInt(team3Match[1]);
-          
-          console.log(`[CS2Monitor] Альтернативный счёт: CT ${ctScore} - ${tScore} T`);
-        } catch (err) {
-          console.log(`[CS2Monitor] Альтернативный парсинг не удался:`, err.message);
-        }
-      }
-
-      // Проверяем условия победы
-      const maxRounds = 24; // MR12 = 24 раунда максимум
-      const winScore = 13; // Первая команда до 13
-
-      let winner = null;
-
-      // Обычная победа (13 раундов)
-      if (ctScore >= winScore && ctScore >= tScore + 2) {
-        winner = 'CT';
-      } else if (tScore >= winScore && tScore >= ctScore + 2) {
-        winner = 'T';
-      }
       
-      // Победа после овертайма (16+ раундов с перевесом в 2)
-      else if (ctScore >= 16 && ctScore >= tScore + 2) {
-        winner = 'CT';
-      } else if (tScore >= 16 && tScore >= ctScore + 2) {
-        winner = 'T';
-      }
+      // Получаем счёт команды 3 (T)
+      const team3Cmd = await cs2Service.executeCommand(
+        serverHost,
+        serverPort,
+        rconPassword,
+        'mp_teamscore_2'
+      );
 
-      if (winner) {
-        console.log(`[CS2Monitor] 🏆 Победитель определён: ${winner} (${ctScore}:${tScore})`);
-        
-        // Определяем какая команда из лобби победила
-        let winningTeam;
-        
-        if (teamMapping.CT === 'A' && winner === 'CT') {
-          winningTeam = 'A';
-        } else if (teamMapping.T === 'A' && winner === 'T') {
-          winningTeam = 'A';
-        } else {
-          winningTeam = 'B';
-        }
-        
-        console.log(`[CS2Monitor] Победила команда из лобби: ${winningTeam}`);
-        
-        await this.handleMatchEnd(lobbyId, winningTeam, serverHost, serverPort, rconPassword);
-      } else {
-        console.log(`[CS2Monitor] Игра продолжается: CT ${ctScore} - ${tScore} T`);
-      }
+      console.log(`[CS2Monitor] Ответ mp_teamscore_1:`, team2Cmd);
+      console.log(`[CS2Monitor] Ответ mp_teamscore_2:`, team3Cmd);
+
+      // Парсим ответы (формат: "mp_teamscore_1" = "5")
+      const team2Match = team2Cmd.match(/"mp_teamscore_1"\s*=\s*"(\d+)"/);
+      const team3Match = team3Cmd.match(/"mp_teamscore_2"\s*=\s*"(\d+)"/);
+
+      if (team2Match) team2Score = parseInt(team2Match[1]);
+      if (team3Match) team3Score = parseInt(team3Match[1]);
+
+      console.log(`[CS2Monitor] Счёт: Team2(CT) ${team2Score} - ${team3Score} Team3(T)`);
 
     } catch (error) {
-      console.error(`[CS2Monitor] Ошибка проверки статуса:`, error.message);
+      console.error(`[CS2Monitor] Ошибка получения счёта:`, error.message);
+      return; // Пропускаем эту итерацию
     }
+
+    // Проверяем условия победы (MR12 = первая до 13)
+    const winScore = 13;
+    let winner = null;
+
+    if (team2Score >= winScore) {
+      winner = 'CT';
+    } else if (team3Score >= winScore) {
+      winner = 'T';
+    }
+
+    if (winner) {
+      console.log(`[CS2Monitor] 🏆 Победитель определён: ${winner} (CT ${team2Score}:${team3Score} T)`);
+      
+      // Определяем какая команда из лобби победила
+      let winningTeam;
+      
+      if (teamMapping.CT === 'A' && winner === 'CT') {
+        winningTeam = 'A';
+      } else if (teamMapping.T === 'A' && winner === 'T') {
+        winningTeam = 'A';
+      } else {
+        winningTeam = 'B';
+      }
+      
+      console.log(`[CS2Monitor] Победила команда из лобби: ${winningTeam}`);
+      
+      await this.handleMatchEnd(lobbyId, winningTeam, serverHost, serverPort, rconPassword);
+    } else {
+      console.log(`[CS2Monitor] Игра продолжается: CT ${team2Score} - ${team3Score} T`);
+    }
+
+  } catch (error) {
+    console.error(`[CS2Monitor] Ошибка проверки статуса:`, error.message);
   }
+}
 
   /**
    * Обработать завершение матча
