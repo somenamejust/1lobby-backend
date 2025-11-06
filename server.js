@@ -14,6 +14,7 @@ const authRoutes = require('./routes/auth');
 const userRoutes = require('./routes/users');
 const lobbyRoutes = require('./routes/lobbies');
 const botService = require('./services/DotaBotService');
+const cs2gsiRoutes = require('./routes/cs2gsi');
 
 // Инициализация
 const app = express();
@@ -60,6 +61,8 @@ app.use(passport.session());
 app.use('/api/auth', authRoutes);
 app.use('/api/lobbies', lobbyRoutes);
 app.use('/api/users', userRoutes);
+
+app.use('/api/cs2', cs2gsiRoutes);
 
 // Логика Socket.IO
 io.on('connection', (socket) => {
