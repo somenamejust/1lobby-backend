@@ -3,8 +3,9 @@ const router = express.Router();
 const Lobby = require('../models/Lobby');
 const User = require('../models/User');
 const dotaBotService = require('../services/DotaBotService');
-const cs2ServerPool = require('../services/cs2ServerPool');
 const cs2Service = require('../services/cs2Service');
+const cs2ServerPool = require('../services/cs2ServerPool');
+const cs2MatchMonitor = require('../services/cs2MatchMonitor');
 
 // Маршрут для получения ВСЕХ лобби
 // GET /api/lobbies
@@ -543,6 +544,20 @@ router.put('/:id/start', async (req, res) => {
         );
         
         console.log(`[CS2] Сервер настроен! IP: ${lobby.cs2ServerIp}`);
+
+        // 🆕 ЗАПУСКАЕМ МОНИТОРИНГ
+        const cs2MatchMonitor = require('../services/cs2MatchMonitor');
+        const server = cs2ServerPool.getServerById(lobby.cs2ServerId);
+        
+        if (server) {
+          cs2MatchMonitor.startMonitoring(
+            lobby.id,
+            server.host,
+            server.port,
+            server.rconPassword
+          );
+          console.log(`[CS2] Запущен мониторинг матча для лобби ${lobby.id}`);
+        }
         
       } catch (cs2Error) {
         console.error('[CS2] Ошибка настройки сервера:', cs2Error.message);

@@ -146,3 +146,5 @@ mongoose.connect(process.env.DATABASE_URL)
     }, 5000); // Проверяем каждые 5 секунд
   })
   .catch(err => console.error('Ошибка подключения к MongoDB:', err));
+
+module.exports.io = io;  
