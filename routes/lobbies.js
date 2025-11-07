@@ -3,9 +3,8 @@ const router = express.Router();
 const Lobby = require('../models/Lobby');
 const User = require('../models/User');
 const dotaBotService = require('../services/DotaBotService');
-const cs2Service = require('../services/cs2Service');
 const cs2ServerPool = require('../services/cs2ServerPool');
-const cs2MatchMonitor = require('../services/cs2MatchMonitor');
+const cs2Service = require('../services/cs2Service');
 
 // Маршрут для получения ВСЕХ лобби
 // GET /api/lobbies
@@ -544,39 +543,6 @@ router.put('/:id/start', async (req, res) => {
         );
         
         console.log(`[CS2] Сервер настроен! IP: ${lobby.cs2ServerIp}`);
-
-        // 🆕 ЗАПУСКАЕМ МОНИТОРИНГ С МАППИНГОМ КОМАНД
-        const cs2MatchMonitor = require('../services/cs2MatchMonitor');
-        const server = cs2ServerPool.getServerById(lobby.cs2ServerId);
-        
-
-        if (server) {
-          // Создаём маппинг: какая команда из лобби играет за CT/T
-          const teamMapping = {};
-          
-          // Находим первого игрока команды A и B
-          const teamAPlayer = lobby.slots.find(s => s.user && s.team === 'A');
-          const teamBPlayer = lobby.slots.find(s => s.user && s.team === 'B');
-          
-          // В CS2: первая команда обычно CT, вторая - T
-          // Но может быть иначе в зависимости от карты
-          // Для простоты: команда A = CT, команда B = T
-          teamMapping.CT = 'A';
-          teamMapping.T = 'B';
-          
-          // console.log(`[CS2] Маппинг команд:`, teamMapping);
-          
-          // cs2MatchMonitor.startMonitoring(
-          //   lobby.id,
-          //   server.host,
-          //   server.port,
-          //   server.rconPassword,
-          //   teamMapping // 🆕 Передаём маппинг!
-          // );
-          // console.log(`[CS2] Запущен мониторинг матча для лобби ${lobby.id}`);
-
-          console.log(`[CS2] Мониторинг через RCON отключён, используем GSI`);
-        }
         
       } catch (cs2Error) {
         console.error('[CS2] Ошибка настройки сервера:', cs2Error.message);
