@@ -548,6 +548,7 @@ router.put('/:id/start', async (req, res) => {
         // 🆕 ЗАПУСКАЕМ МОНИТОРИНГ С МАППИНГОМ КОМАНД
         const cs2MatchMonitor = require('../services/cs2MatchMonitor');
         const server = cs2ServerPool.getServerById(lobby.cs2ServerId);
+        
 
         if (server) {
           // Создаём маппинг: какая команда из лобби играет за CT/T
@@ -563,16 +564,18 @@ router.put('/:id/start', async (req, res) => {
           teamMapping.CT = 'A';
           teamMapping.T = 'B';
           
-          console.log(`[CS2] Маппинг команд:`, teamMapping);
+          // console.log(`[CS2] Маппинг команд:`, teamMapping);
           
-          cs2MatchMonitor.startMonitoring(
-            lobby.id,
-            server.host,
-            server.port,
-            server.rconPassword,
-            teamMapping // 🆕 Передаём маппинг!
-          );
-          console.log(`[CS2] Запущен мониторинг матча для лобби ${lobby.id}`);
+          // cs2MatchMonitor.startMonitoring(
+          //   lobby.id,
+          //   server.host,
+          //   server.port,
+          //   server.rconPassword,
+          //   teamMapping // 🆕 Передаём маппинг!
+          // );
+          // console.log(`[CS2] Запущен мониторинг матча для лобби ${lobby.id}`);
+
+          console.log(`[CS2] Мониторинг через RCON отключён, используем GSI`);
         }
         
       } catch (cs2Error) {
