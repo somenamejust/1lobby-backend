@@ -386,6 +386,22 @@ router.put('/:id/kick', async (req, res) => {
   }
 });
 
+// ========== 🆕 ВСПОМОГАТЕЛЬНАЯ ФУНКЦИЯ ==========
+/**
+ * Определяет карту CS2 на основе режима лобби
+ */
+function getCS2MapForMode(mode) {
+  const modeToMap = {
+    '1v1': 'de_dust2',
+    '2v2': 'de_inferno',
+    '3v3': 'de_mirage',
+    '5v5': 'de_dust2',
+    'Free-for-all': 'de_dust2'
+  };
+  
+  return modeToMap[mode] || 'de_dust2'; // По умолчанию dust2
+}
+
 router.put('/:id/start', async (req, res) => {
   try {
     const lobbyId = req.params.id;
@@ -404,46 +420,39 @@ router.put('/:id/start', async (req, res) => {
     console.log('Game:', lobby.game);
     console.log('Mode:', lobby.mode);
     console.log('Current Status:', lobby.status);
-    console.log('BotAccountId:', lobby.botAccountId);
-    console.log('Slots:', JSON.stringify(lobby.slots, null, 2));
 
-    // 🆕 ПРОВЕРКА: Если игра уже идет
+    // Проверки безопасности
     if (lobby.status === 'in_progress') {
       console.log('⚠️ [Start Game] Игра уже запущена!');
       return res.status(400).json({ message: "Game already in progress" });
+    }
+
+    if (lobby.status === 'finished') {
+      return res.status(400).json({ message: "The game has already finished." });
     }
 
     if (String(lobby.host.id) !== String(hostId)) {
       return res.status(403).json({ message: "Only the host can start the game!" });
     }
 
-    if (lobby.status === 'finished') {
-        return res.status(400).json({ message: "The game has already finished." });
-    }
-
-    // ========== DOTA 2 ЛОГИКА (БЕЗ ИЗМЕНЕНИЙ) ==========
+    // ========== DOTA 2 ЛОГИКА ==========
     if (lobby.game === 'Dota 2') {
       
       // СОЗДАЕМ ЛОББИ В DOTA 2
       if (!lobby.botAccountId) {
         try {
-          console.log('[Bot API] Создание Dota 2 лобби перед стартом...');
+          console.log('[Dota 2] Создание лобби...');
           
-          // Собираем игроков из слотов
           const radiantSlots = lobby.slots.filter(s => s.user && s.team === 'Radiant');
           const direSlots = lobby.slots.filter(s => s.user && s.team === 'Dire');
 
-          // Проверяем Steam ID
           const radiantPlayers = [];
           const direPlayers = [];
 
           for (const slot of radiantSlots) {
             const user = await User.findOne({ id: slot.user.id });
             if (user && user.steamId) {
-              radiantPlayers.push({
-                steamId: user.steamId,
-                slot: slot.position
-              });
+              radiantPlayers.push({ steamId: user.steamId, slot: slot.position });
             } else {
               console.log(`⚠️ У игрока ${slot.user.username} нет Steam ID`);
             }
@@ -452,19 +461,15 @@ router.put('/:id/start', async (req, res) => {
           for (const slot of direSlots) {
             const user = await User.findOne({ id: slot.user.id });
             if (user && user.steamId) {
-              direPlayers.push({
-                steamId: user.steamId,
-                slot: slot.position
-              });
+              direPlayers.push({ steamId: user.steamId, slot: slot.position });
             } else {
               console.log(`⚠️ У игрока ${slot.user.username} нет Steam ID`);
             }
           }
 
           if (radiantPlayers.length === 0 && direPlayers.length === 0) {
-            console.log('[Bot API] Нет игроков с Steam ID, пропускаем создание Dota 2 лобби');
+            console.log('[Dota 2] Нет игроков с Steam ID');
           } else {
-            // Создаем лобби через Bot API
             const botResult = await dotaBotService.createDotaLobby({
               name: lobby._id.toString(),
               password: lobby.password || '',
@@ -474,80 +479,78 @@ router.put('/:id/start', async (req, res) => {
               direPlayers
             });
 
-            // Сохраняем информацию о боте
             lobby.botServerId = botResult.botServerId;
             lobby.botAccountId = botResult.lobbyId;
             await lobby.save();
 
-            console.log(`[Bot API] Dota 2 лобби создано! ID: ${botResult.lobbyId}`);
-            
-            // 🆕 ЗАПУСКАЕМ МОНИТОРИНГ ЛОББИ БОТОМ
-            console.log(`[Bot API] Бот начал мониторинг лобби ${lobby.id}`);
+            console.log(`[Dota 2] Лобби создано! ID: ${botResult.lobbyId}`);
           }
         } catch (botError) {
-          console.error('[Bot API] Ошибка создания Dota 2 лобби:', botError.message);
+          console.error('[Dota 2] Ошибка создания лобби:', botError.message);
         }
       }
 
-      // ПОТОМ ЗАПУСКАЕМ ИГРУ
+      // ЗАПУСКАЕМ ИГРУ
       if (lobby.botAccountId) {
         try {
           const server = dotaBotService.getAvailableBotServer();
           
-          // Ждем 15 секунд чтобы игроки успели зайти
-          console.log('[Bot API] Ожидание 15 секунд для входа игроков...');
+          console.log('[Dota 2] Ожидание 15 секунд для входа игроков...');
           await new Promise(resolve => setTimeout(resolve, 15000));
           
-          // Проверяем кто зашел
-          console.log('[Bot API] Проверка игроков в лобби...');
+          console.log('[Dota 2] Проверка игроков в лобби...');
           const playersStatus = await dotaBotService.checkLobbyPlayers(lobby.botAccountId, server.url);
           
-          console.log(`[Bot API] В лобби: ${playersStatus.playersInLobby?.length || 0} из ${playersStatus.expectedPlayers} игроков`);
-          console.log(`[Bot API] Все зашли: ${playersStatus.allJoined}`);
+          console.log(`[Dota 2] В лобби: ${playersStatus.playersInLobby?.length || 0} из ${playersStatus.expectedPlayers}`);
           
-          // Запускаем игру
           await dotaBotService.startGame(lobby.botAccountId, server.url);
-          console.log(`[Bot API] Игра запущена в Dota 2!`);
+          console.log(`[Dota 2] Игра запущена!`);
           
         } catch (botError) {
-          console.error('[Bot API] Ошибка запуска игры в Dota 2:', botError.message);
+          console.error('[Dota 2] Ошибка запуска игры:', botError.message);
         }
       }
     } 
     
-    // ========== 🆕 CS2 ЛОГИКА (НОВАЯ) ==========
+    // ========== CS2 ЛОГИКА ==========
     else if (lobby.game === 'CS2') {
-      let assignedServer = null; // 🆕 Храним ссылку на сервер
+      let assignedServer = null;
       
       try {
         console.log('[CS2] Запуск CS2 матча...');
         
-        // 🆕 Сохраняем сервер в переменную
+        // 1. Назначаем сервер
         assignedServer = cs2ServerPool.assignServer(lobby.id);
         console.log(`[CS2] Назначен сервер: ${assignedServer.id} (${assignedServer.host}:${assignedServer.port})`);
         
+        // 2. Сохраняем информацию о сервере
         lobby.cs2ServerId = assignedServer.id;
-        lobby.cs2ServerIp = `${assignedServer.host}:${assignedServer.port}`;
         
+        // 3. 🆕 Определяем карту на основе режима
+        const mapName = getCS2MapForMode(lobby.mode);
+        console.log(`[CS2] Режим: ${lobby.mode} → Карта: ${mapName}`);
+        
+        // 4. Очищаем сервер от предыдущих игроков
         console.log(`[CS2] Очистка сервера...`);
         await cs2Service.kickAll(assignedServer.host, assignedServer.port, assignedServer.rconPassword);
         
-        console.log(`[CS2] Установка карты: ${lobby.map || 'de_dust2'}`);
+        // 5. Устанавливаем карту и режим
+        console.log(`[CS2] Установка карты: ${mapName}`);
         await cs2Service.setMapAndMode(
           assignedServer.host,
           assignedServer.port,
           assignedServer.rconPassword,
-          lobby.map || 'de_dust2',
-          0, // game_type
-          1  // game_mode
+          mapName,
+          0, // game_type (competitive)
+          1  // game_mode (competitive)
         );
         
-        console.log(`[CS2] Сервер настроен! IP: ${lobby.cs2ServerIp}`);
+        console.log(`[CS2] ✅ Сервер настроен! Подключение: connect ${assignedServer.host}:${assignedServer.port}`);
         
       } catch (cs2Error) {
-        console.error('[CS2] Ошибка настройки сервера:', cs2Error.message);
+        console.error('[CS2] ❌ Ошибка настройки сервера:', cs2Error.message);
         
-        // 🆕 КРИТИЧНО: Освобождаем сервер при ошибке!
+        // Освобождаем сервер при ошибке
         if (assignedServer) {
           console.log(`[CS2] Освобождаем сервер ${assignedServer.id} после ошибки...`);
           cs2ServerPool.releaseServer(assignedServer.id);
@@ -559,7 +562,7 @@ router.put('/:id/start', async (req, res) => {
       }
     }
 
-    // ========== ОБЩАЯ ЛОГИКА (для обеих игр) ==========
+    // ========== ОБЩАЯ ЛОГИКА ==========
     lobby.status = 'in_progress';
     lobby.countdownStartTime = null;
     lobby.startedAt = new Date();
@@ -572,7 +575,7 @@ router.put('/:id/start', async (req, res) => {
     res.status(200).json(updatedLobby.toObject());
 
   } catch (error) {
-    console.error("Error starting game:", error);
+    console.error("❌ Error starting game:", error);
     res.status(500).json({ message: 'Server error' });
   }
 });
