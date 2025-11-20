@@ -388,9 +388,17 @@ router.put('/:id/kick', async (req, res) => {
 
 // ========== 🆕 ВСПОМОГАТЕЛЬНАЯ ФУНКЦИЯ ==========
 /**
- * Определяет карту CS2 на основе режима лобби
+ * Определяет карту CS2 
+ * Приоритет: выбор пользователя (lobby.map) → дефолт по режиму
  */
-function getCS2MapForMode(mode) {
+function getCS2MapForMode(lobby) {
+  // 1. Если в лобби указана карта - используем её
+  if (lobby.map) {
+    console.log(`[CS2] Карта из лобби: ${lobby.map}`);
+    return lobby.map;
+  }
+  
+  // 2. Иначе выбираем по режиму (на случай старых лобби без map)
   const modeToMap = {
     '1v1': 'de_dust2',
     '2v2': 'de_inferno',
@@ -399,7 +407,9 @@ function getCS2MapForMode(mode) {
     'Free-for-all': 'de_dust2'
   };
   
-  return modeToMap[mode] || 'de_dust2'; // По умолчанию dust2
+  const fallbackMap = modeToMap[lobby.mode] || 'de_dust2';
+  console.log(`[CS2] Карта по режиму ${lobby.mode}: ${fallbackMap}`);
+  return fallbackMap;
 }
 
 router.put('/:id/start', async (req, res) => {
@@ -527,7 +537,7 @@ router.put('/:id/start', async (req, res) => {
         lobby.cs2ServerId = assignedServer.id;
         
         // 3. 🆕 Определяем карту на основе режима
-        const mapName = getCS2MapForMode(lobby.mode);
+        const mapName = getCS2MapForMode(lobby);
         console.log(`[CS2] Режим: ${lobby.mode} → Карта: ${mapName}`);
         
         // 4. Очищаем сервер от предыдущих игроков
