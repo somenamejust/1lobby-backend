@@ -591,6 +591,44 @@ router.put('/:id/start', async (req, res) => {
 });
 
 // ========================================
+// 🆕 ENDPOINT ДЛЯ MATCHZY СОБЫТИЙ
+// ========================================
+router.post('/matchzy-events', async (req, res) => {
+  try {
+    const event = req.body;
+    
+    console.log('========================================');
+    console.log('🎮 [MatchZy Event] Получено событие');
+    console.log('========================================');
+    console.log('Тип события:', event.event);
+    console.log('Время:', new Date().toISOString());
+    console.log('Данные:', JSON.stringify(event, null, 2));
+    console.log('========================================\n');
+
+    // Проверка секретного ключа (опционально)
+    const secret = req.headers['x-matchzy-secret'];
+    if (secret !== 'your_secret_key_here_change_this') {
+      console.warn('⚠️ Invalid secret key');
+      return res.status(401).json({ success: false, message: 'Unauthorized' });
+    }
+
+    // Обрабатываем только событие завершения матча
+    if (event.event === 'series_end' || event.event === 'map_end') {
+      // Здесь будет логика обработки результатов
+      console.log('🏁 Match finished, processing results...');
+      
+      // TODO: Найти лобби по matchid и обработать результат
+    }
+
+    res.status(200).json({ success: true, message: 'Event received' });
+
+  } catch (error) {
+    console.error('❌ [MatchZy Event] Error:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// ========================================
 // 🆕 НОВЫЙ ENDPOINT: Автоматическое получение результата от бота
 // ========================================
 
