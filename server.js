@@ -57,6 +57,8 @@ app.use(passport.initialize());
 app.use(passport.session());
 
 // Маршруты
+app.use('/public', express.static('public'));
+
 app.use('/api/auth', authRoutes);
 app.use('/api/lobbies', lobbyRoutes);
 app.use('/api/users', userRoutes);

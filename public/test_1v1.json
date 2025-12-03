@@ -1,0 +1,21 @@
+{
+  "matchid": "test_1v1_lobby_123",
+  "num_maps": 1,
+  "players_per_team": 1,
+  "min_players_to_ready": 1,
+  "skip_veto": true,
+  "maplist": ["de_dust2"],
+  "team1": {
+    "name": "Team A",
+    "tag": "A"
+  },
+  "team2": {
+    "name": "Team B", 
+    "tag": "B"
+  },
+  "cvars": {
+    "mp_maxrounds": "3",
+    "mp_overtime_enable": "0",
+    "mp_match_can_clinch": "1"
+  }
+}
