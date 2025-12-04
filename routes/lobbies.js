@@ -628,7 +628,6 @@ router.put('/:id/start', async (req, res) => {
 async function processMatchResult(lobbyId, event, io) {
   console.log('🎯 [Process Result] Начинаем обработку результата');
   
-  // Определяем формат
   const isMatchZyFormat = event.event === 'series_end';
   
   let winner, matchId, duration;
@@ -636,10 +635,11 @@ async function processMatchResult(lobbyId, event, io) {
   if (isMatchZyFormat) {
     console.log('🎮 [MatchZy Format]');
     
+    // 🆕 ДЛЯ CS2: team1 → A, team2 → B
     if (event.winner.team === 'team1') {
-      winner = 'radiant';
+      winner = 'A';  // Counter-Terrorists
     } else if (event.winner.team === 'team2') {
-      winner = 'dire';
+      winner = 'B';  // Terrorists
     } else {
       winner = 'unknown';
     }
@@ -647,11 +647,22 @@ async function processMatchResult(lobbyId, event, io) {
     matchId = event.matchid;
     duration = 0;
     
-    console.log(`✅ Конвертировали: ${event.winner.team} → ${winner}`);
+    console.log(`✅ Конвертировали: ${event.winner.team} → Team ${winner}`);
     
   } else {
     console.log('🤖 [Dota Format]');
-    ({ matchId, winner, duration } = event);
+    
+    // Для Dota 2 конвертируем в имена команд
+    if (event.winner === 'radiant') {
+      winner = 'Radiant';
+    } else if (event.winner === 'dire') {
+      winner = 'Dire';
+    } else {
+      winner = event.winner; // timeout, unknown и т.д.
+    }
+    
+    matchId = event.matchId;
+    duration = event.duration || 0;
   }
 
   // Находим лобби
@@ -674,15 +685,10 @@ async function processMatchResult(lobbyId, event, io) {
     await handleMatchTimeout(lobby);
   } else if (winner === 'unknown') {
     await handleMatchCancelled(lobby, 'Unknown result');
-  } else if (winner === 'radiant' || winner === 'dire') {
-    const winningTeam = lobby.game === 'Dota 2' 
-      ? (winner === 'radiant' ? 'Radiant' : 'Dire')
-      : (winner === 'radiant' ? 'A' : 'B');
-    
-    console.log(`🔄 Конвертировали: "${winner}" → "${winningTeam}"`);
-    await handleMatchComplete(lobby, winningTeam, matchId, duration);
   } else {
-    throw new Error(`Invalid winner: ${winner}`);
+    // Теперь winner уже правильный: 'A', 'B', 'Radiant', 'Dire'
+    console.log(`🏆 Победитель: Team ${winner}`);
+    await handleMatchComplete(lobby, winner, matchId, duration);
   }
 
   // Освобождаем ресурсы
