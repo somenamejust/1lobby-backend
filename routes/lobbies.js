@@ -635,11 +635,11 @@ async function processMatchResult(lobbyId, event, io) {
   if (isMatchZyFormat) {
     console.log('🎮 [MatchZy Format]');
     
-    // 🆕 ДЛЯ CS2: team1 → A, team2 → B
+    // ДЛЯ CS2: team1 (T) → A, team2 (CT) → B
     if (event.winner.team === 'team1') {
-      winner = 'A';  // Counter-Terrorists
+      winner = 'A';  // Terrorists = Team A
     } else if (event.winner.team === 'team2') {
-      winner = 'B';  // Terrorists
+      winner = 'B';  // Counter-Terrorists = Team B
     } else {
       winner = 'unknown';
     }
@@ -652,11 +652,11 @@ async function processMatchResult(lobbyId, event, io) {
   } else {
     console.log('🤖 [Dota Format]');
     
-    // Для Dota 2 конвертируем в имена команд
+    // ДЛЯ DOTA 2: radiant → A, dire → B
     if (event.winner === 'radiant') {
-      winner = 'Radiant';
+      winner = 'A';  // Radiant = Team A
     } else if (event.winner === 'dire') {
-      winner = 'Dire';
+      winner = 'B';  // Dire = Team B
     } else {
       winner = event.winner; // timeout, unknown и т.д.
     }
