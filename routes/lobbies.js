@@ -132,14 +132,30 @@ router.put('/:id/leave', async (req, res) => {
     const isHostLeaving = String(lobby.host.id) === String(userId);
 
     if (isHostLeaving) {
-      // Освобождаем бота если он был назначен
+      // Освобождаем Dota 2 бота
       if (lobby.botAccountId && lobby.botServerId) {
         try {
           const server = dotaBotService.getAvailableBotServer();
           await dotaBotService.releaseLobby(lobby.botAccountId, server.url);
-          console.log(`[Bot] ✅ Хост покинул лобби ${lobby.id}, бот освобожден (Dota Lobby ID: ${lobby.botAccountId})`);
+          console.log(`[Bot] ✅ Хост покинул лобби ${lobby.id}, бот освобожден`);
         } catch (error) {
-          console.error('[Bot] ⚠️ Ошибка освобождения бота при выходе хоста:', error.message);
+          console.error('[Bot] ⚠️ Ошибка освобождения бота:', error.message);
+        }
+      }
+
+      // Освобождаем CS2 сервер
+      if (lobby.cs2ServerId) {
+        try {
+          console.log(`[CS2] Хост покинул лобби ${lobby.id}, освобождаем сервер ${lobby.cs2ServerId}`);
+          cs2ServerPool.releaseServer(lobby.cs2ServerId);
+          
+          const server = cs2ServerPool.getServerById(lobby.cs2ServerId);
+          if (server) {
+            await cs2Service.kickAll(server.host, server.port, server.rconPassword);
+            console.log(`[CS2] ✅ Сервер ${lobby.cs2ServerId} освобождён и очищен`);
+          }
+        } catch (error) {
+          console.error('[CS2] ⚠️ Ошибка освобождения сервера:', error.message);
         }
       }
 
@@ -166,14 +182,30 @@ router.put('/:id/leave', async (req, res) => {
     }
     
     if (finalTotalCount === 0) {
-      // Освобождаем бота если он был назначен
+      // Освобождаем Dota 2 бота
       if (lobby.botAccountId && lobby.botServerId) {
         try {
           const server = dotaBotService.getAvailableBotServer();
           await dotaBotService.releaseLobby(lobby.botAccountId, server.url);
-          console.log(`[Bot] ✅ Лобби ${lobby.id} опустело, бот освобожден (Dota Lobby ID: ${lobby.botAccountId})`);
+          console.log(`[Bot] ✅ Лобби ${lobby.id} опустело, бот освобожден`);
         } catch (error) {
           console.error('[Bot] ⚠️ Ошибка освобождения бота:', error.message);
+        }
+      }
+
+      // 🆕 ДОБАВЬ ЭТО: Освобождаем CS2 сервер
+      if (lobby.cs2ServerId) {
+        try {
+          console.log(`[CS2] Лобби ${lobby.id} опустело, освобождаем сервер ${lobby.cs2ServerId}`);
+          cs2ServerPool.releaseServer(lobby.cs2ServerId);
+          
+          const server = cs2ServerPool.getServerById(lobby.cs2ServerId);
+          if (server) {
+            await cs2Service.kickAll(server.host, server.port, server.rconPassword);
+            console.log(`[CS2] ✅ Сервер ${lobby.cs2ServerId} освобождён и очищен`);
+          }
+        } catch (error) {
+          console.error('[CS2] ⚠️ Ошибка освобождения сервера:', error.message);
         }
       }
 
@@ -591,220 +623,179 @@ router.put('/:id/start', async (req, res) => {
 });
 
 // ========================================
-// 🆕 ENDPOINT ДЛЯ MATCHZY СОБЫТИЙ
+// 🆕 ОБЩАЯ ФУНКЦИЯ ОБРАБОТКИ РЕЗУЛЬТАТА
+// ========================================
+async function processMatchResult(lobbyId, event, io) {
+  console.log('🎯 [Process Result] Начинаем обработку результата');
+  
+  // Определяем формат
+  const isMatchZyFormat = event.event === 'series_end';
+  
+  let winner, matchId, duration;
+
+  if (isMatchZyFormat) {
+    console.log('🎮 [MatchZy Format]');
+    
+    if (event.winner.team === 'team1') {
+      winner = 'radiant';
+    } else if (event.winner.team === 'team2') {
+      winner = 'dire';
+    } else {
+      winner = 'unknown';
+    }
+    
+    matchId = event.matchid;
+    duration = 0;
+    
+    console.log(`✅ Конвертировали: ${event.winner.team} → ${winner}`);
+    
+  } else {
+    console.log('🤖 [Dota Format]');
+    ({ matchId, winner, duration } = event);
+  }
+
+  // Находим лобби
+  const lobby = await Lobby.findById(lobbyId);
+  
+  if (!lobby) {
+    throw new Error(`Лобби ${lobbyId} не найдено`);
+  }
+
+  console.log(`✅ Лобби найдено: ${lobby.title}`);
+
+  // Проверяем статус
+  if (lobby.status === 'finished' || lobby.status === 'cancelled') {
+    console.warn(`⚠️ Лобби уже завершено (${lobby.status})`);
+    return { success: true, message: 'Already finished', lobby };
+  }
+
+  // Обрабатываем результат
+  if (winner === 'timeout') {
+    await handleMatchTimeout(lobby);
+  } else if (winner === 'unknown') {
+    await handleMatchCancelled(lobby, 'Unknown result');
+  } else if (winner === 'radiant' || winner === 'dire') {
+    const winningTeam = lobby.game === 'Dota 2' 
+      ? (winner === 'radiant' ? 'Radiant' : 'Dire')
+      : (winner === 'radiant' ? 'A' : 'B');
+    
+    console.log(`🔄 Конвертировали: "${winner}" → "${winningTeam}"`);
+    await handleMatchComplete(lobby, winningTeam, matchId, duration);
+  } else {
+    throw new Error(`Invalid winner: ${winner}`);
+  }
+
+  // Освобождаем ресурсы
+  if (lobby.game === 'Dota 2' && lobby.botAccountId) {
+    console.log(`🤖 Освобождаем Dota 2 бота...`);
+    try {
+      const server = dotaBotService.getAvailableBotServer();
+      await dotaBotService.releaseLobby(lobby.botAccountId, server.url);
+      console.log(`✅ Dota 2 бот освобождён`);
+    } catch (error) {
+      console.error(`⚠️ Ошибка освобождения бота:`, error.message);
+    }
+  }
+  
+  if (lobby.game === 'CS2' && lobby.cs2ServerId) {
+    console.log(`🎮 Освобождаем CS2 сервер ${lobby.cs2ServerId}...`);
+    try {
+      cs2ServerPool.releaseServer(lobby.cs2ServerId);
+      
+      const server = cs2ServerPool.getServerById(lobby.cs2ServerId);
+      if (server) {
+        await cs2Service.kickAll(server.host, server.port, server.rconPassword);
+        await cs2Service.setMapAndMode(
+          server.host, server.port, server.rconPassword,
+          'de_dust2', 0, 1
+        );
+        console.log(`✅ CS2 сервер ${lobby.cs2ServerId} освобождён`);
+      } else {
+        console.warn(`⚠️ Сервер ${lobby.cs2ServerId} не найден в пуле (уже освобождён?)`);
+      }
+    } catch (error) {
+      console.error(`⚠️ Ошибка освобождения сервера:`, error.message);
+    }
+  }
+
+  // WebSocket уведомление
+  const freshLobby = await Lobby.findById(lobbyId);
+  io.in(lobby.id.toString()).emit('lobbyUpdated', freshLobby.toObject());
+
+  console.log(`✅ Результат обработан!\n`);
+  
+  return { success: true, message: 'Processed', lobby: freshLobby };
+}
+
+// ========================================
+// ДИСПЕТЧЕР ОТ MATCHZY (УПРОЩЁННЫЙ!)
 // ========================================
 router.post('/matchzy-events', async (req, res) => {
   try {
     const event = req.body;
     
     console.log('========================================');
-    console.log('🎮 [MatchZy Event] Получено событие');
+    console.log('🎮 [MatchZy Dispatcher] Получено событие');
+    console.log('Тип:', event.event);
     console.log('========================================');
-    console.log('Тип события:', event.event);
-    console.log('Время:', new Date().toISOString());
-    console.log('Данные:', JSON.stringify(event, null, 2));
-    console.log('========================================\n');
 
-    // Проверка секретного ключа (опционально)
-    const secret = req.headers['x-matchzy-secret'];
-    if (secret !== 'your_secret_key_here_change_this') {
-      console.warn('⚠️ Invalid secret key');
-      return res.status(401).json({ success: false, message: 'Unauthorized' });
-    }
+    if (event.event === 'series_end') {
+      // Находим лобби
+      const lobby = await Lobby.findOne({ 
+        game: 'CS2',
+        status: 'in_progress'
+      }).sort({ startedAt: -1 });
 
-    // Обрабатываем только событие завершения матча
-    if (event.event === 'series_end' || event.event === 'map_end') {
-      // Здесь будет логика обработки результатов
-      console.log('🏁 Match finished, processing results...');
+      if (!lobby) {
+        console.warn('⚠️ Активное CS2 лобби не найдено');
+        return res.status(200).json({ 
+          success: false, 
+          message: 'No active lobby found' 
+        });
+      }
+
+      console.log(`✅ Найдено лобби: ${lobby.id}`);
+
+      // 🎯 ВЫЗЫВАЕМ ОБЩУЮ ФУНКЦИЮ!
+      const io = req.app.get('socketio');
+      const result = await processMatchResult(lobby._id, event, io);
       
-      // TODO: Найти лобби по matchid и обработать результат
+      return res.status(200).json(result);
     }
 
+    console.log(`ℹ️ Событие ${event.event} проигнорировано`);
     res.status(200).json({ success: true, message: 'Event received' });
 
   } catch (error) {
-    console.error('❌ [MatchZy Event] Error:', error);
+    console.error('❌ [MatchZy] Ошибка:', error);
     res.status(500).json({ success: false, error: error.message });
   }
 });
 
 // ========================================
-// 🆕 НОВЫЙ ENDPOINT: Автоматическое получение результата от бота
+// ОБРАБОТЧИК РЕЗУЛЬТАТОВ (УПРОЩЁННЫЙ!)
 // ========================================
-
-/**
- * POST /api/lobbies/:id/match-result
- * Принимает результат матча от бота после окончания игры в Dota 2
- * Бот автоматически отправляет сюда данные когда игра завершается
- */
-// ========================================
-// 🔧 ВРЕМЕННАЯ ВЕРСИЯ ДЛЯ ОТЛАДКИ
-// ========================================
-
 router.post('/:id/match-result', async (req, res) => {
   try {
     const lobbyId = req.params.id;
+    const event = req.body;
     
     console.log('========================================');
-    console.log('🏁 [Match Result] Получен результат матча');
-    console.log('========================================');
-    console.log('📍 Endpoint:', req.method, req.originalUrl);
-    console.log('🕐 Timestamp:', new Date().toISOString());
-    console.log('📦 Body:', JSON.stringify(req.body, null, 2));
+    console.log('🏁 [Match Result] Получен результат');
+    console.log('Lobby ID:', lobbyId);
     console.log('========================================');
 
-    // 🆕 ОПРЕДЕЛЯЕМ ФОРМАТ ДАННЫХ
-    const isMatchZyFormat = req.body.event === 'series_end';
-    
-    let winner, matchId, duration, timestamp, botAccountId;
-
-    if (isMatchZyFormat) {
-      // ========== ФОРМАТ ОТ MATCHZY ==========
-      console.log('🎮 [MatchZy Format] Обрабатываем событие от MatchZy');
-      
-      const event = req.body;
-      
-      // Конвертируем winner из MatchZy формата
-      // team1 = A (Radiant), team2 = B (Dire)
-      if (event.winner.team === 'team1') {
-        winner = 'radiant'; // Или 'A' для других игр
-      } else if (event.winner.team === 'team2') {
-        winner = 'dire'; // Или 'B' для других игр
-      } else {
-        winner = 'unknown';
-      }
-      
-      matchId = event.matchid;
-      duration = 0; // MatchZy не отправляет duration
-      timestamp = new Date().toISOString();
-      
-      console.log(`✅ Конвертировали: ${event.winner.team} → ${winner}`);
-      
-    } else {
-      // ========== ФОРМАТ ОТ DOTA 2 БОТА ==========
-      console.log('🤖 [Dota Format] Обрабатываем результат от Dota 2 бота');
-      
-      ({ matchId, winner, duration, timestamp, botAccountId } = req.body);
-      
-      // Валидация timestamp
-      if (!timestamp || isNaN(new Date(timestamp).getTime())) {
-        console.log('⚠️ Невалидный timestamp, используем текущее время');
-        timestamp = new Date().toISOString();
-      }
-    }
-
-    console.log(`🔍 Winner: ${winner}`);
-    console.log(`🔍 Match ID: ${matchId}`);
-    console.log(`🔍 Duration: ${duration}s`);
-
-    // Находим лобби
-    const lobby = await Lobby.findById(lobbyId);
-    
-    if (!lobby) {
-      console.error(`❌ Лобби ${lobbyId} не найдено`);
-      return res.status(404).json({ 
-        success: false,
-        message: 'Лобби не найдено' 
-      });
-    }
-
-    console.log(`✅ Лобби найдено: ${lobby.title} (game: ${lobby.game})`);
-
-    // Проверяем что игра ещё не завершена
-    if (lobby.status === 'finished' || lobby.status === 'cancelled') {
-      console.warn(`⚠️ Лобби ${lobby.id} уже завершено (${lobby.status})`);
-      return res.status(200).json({ 
-        success: true,
-        message: 'Game already finished' 
-      });
-    }
-
-    // Обрабатываем результат
-    if (winner === 'timeout') {
-      console.log(`⏰ Таймаут игры`);
-      await handleMatchTimeout(lobby);
-      
-    } else if (winner === 'unknown') {
-      console.log(`❓ Неопределённый результат`);
-      await handleMatchCancelled(lobby, 'Game ended abnormally');
-      
-    } else if (winner === 'radiant' || winner === 'dire') {
-      console.log(`🏆 Команда ${winner} победила!`);
-      
-      // Конвертируем в название команды из слотов
-      let winningTeam;
-      if (lobby.game === 'Dota 2') {
-        winningTeam = winner === 'radiant' ? 'Radiant' : 'Dire';
-      } else {
-        winningTeam = winner === 'radiant' ? 'A' : 'B';
-      }
-      
-      console.log(`🔄 Конвертировали: "${winner}" → "${winningTeam}"`);
-      await handleMatchComplete(lobby, winningTeam, matchId, duration);
-      
-    } else {
-      console.error(`❌ Неизвестный победитель: ${winner}`);
-      return res.status(400).json({ 
-        success: false,
-        message: 'Invalid winner value' 
-      });
-    }
-
-    // ========== ОСВОБОЖДЕНИЕ РЕСУРСОВ ==========
-    
-    // Для Dota 2
-    if (lobby.game === 'Dota 2' && (botAccountId || lobby.botAccountId)) {
-      console.log(`🤖 Освобождаем Dota 2 бота...`);
-      try {
-        const server = dotaBotService.getAvailableBotServer();
-        await dotaBotService.releaseLobby(lobby.botAccountId || botAccountId, server.url);
-        console.log(`✅ Dota 2 бот освобождён`);
-      } catch (error) {
-        console.error(`⚠️ Ошибка освобождения Dota 2 бота:`, error.message);
-      }
-    }
-    
-    // Для CS2
-    if (lobby.game === 'CS2' && lobby.cs2ServerId) {
-      console.log(`🎮 Освобождаем CS2 сервер ${lobby.cs2ServerId}...`);
-      try {
-        cs2ServerPool.releaseServer(lobby.cs2ServerId);
-        
-        const server = cs2ServerPool.getServerById(lobby.cs2ServerId);
-        if (server) {
-          await cs2Service.kickAll(server.host, server.port, server.rconPassword);
-          await cs2Service.setMapAndMode(
-            server.host, server.port, server.rconPassword,
-            'de_dust2', 0, 1
-          );
-          console.log(`✅ CS2 сервер освобождён`);
-        }
-      } catch (error) {
-        console.error(`⚠️ Ошибка освобождения CS2 сервера:`, error.message);
-      }
-    }
-
-    // WebSocket уведомление
+    // 🎯 ВЫЗЫВАЕМ ОБЩУЮ ФУНКЦИЮ!
     const io = req.app.get('socketio');
-    const freshLobby = await Lobby.findById(lobbyId);
-    io.in(lobby.id.toString()).emit('lobbyUpdated', freshLobby.toObject());
-
-    console.log(`✅ Результат успешно обработан!`);
-    console.log('========================================\n');
-
-    res.status(200).json({ 
-      success: true,
-      message: 'Match result processed',
-      lobby: freshLobby.toObject()
-    });
+    const result = await processMatchResult(lobbyId, event, io);
+    
+    res.status(200).json(result);
 
   } catch (error) {
-    console.error('========================================');
-    console.error("❌ Критическая ошибка:", error);
-    console.error('========================================\n');
+    console.error('❌ Ошибка:', error);
     res.status(500).json({ 
       success: false,
-      message: 'Internal server error',
+      message: 'Error',
       error: error.message
     });
   }
