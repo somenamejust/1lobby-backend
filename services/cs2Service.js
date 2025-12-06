@@ -249,12 +249,17 @@ class CS2Service {
       await self.executeCommand(serverHost, serverPort, rconPassword, 'css_plugins list'); // Проверка что CS# работает
       await new Promise(resolve => setTimeout(resolve, 1000));
 
-      // Запускаем матч через MatchZy
-      await self.executeCommand(serverHost, serverPort, rconPassword, 'mp_warmup_end'); // Завершаем warmup
+      // 🆕 РЕСТАРТ чтобы применить конфиг к текущим игрокам
+      console.log('[CS2 Match] Применяем конфиг через рестарт...');
+      await self.executeCommand(serverHost, serverPort, rconPassword, 'mp_restartgame 1');
+      await new Promise(resolve => setTimeout(resolve, 2000)); // Ждём рестарта
+
+      // Завершаем warmup и автостарт
+      await self.executeCommand(serverHost, serverPort, rconPassword, 'mp_warmup_end');
       await new Promise(resolve => setTimeout(resolve, 1000));
-      await self.executeCommand(serverHost, serverPort, rconPassword, 'matchzy_autostart'); // MatchZy автостарт!
+      await self.executeCommand(serverHost, serverPort, rconPassword, 'matchzy_autostart');
       console.log('[CS2 Match] ✅ Матч запущен через MatchZy!');
-      
+
       return configFileName;
     } catch (error) {
       console.error('[CS2 Config] ❌ Ошибка:', error.message);
