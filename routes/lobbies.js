@@ -568,11 +568,11 @@ router.put('/:id/start', async (req, res) => {
         // 2. Сохраняем информацию о сервере
         lobby.cs2ServerId = assignedServer.id;
         
-        // 3. 🆕 Определяем карту на основе режима
+        // 3. Определяем карту
         const mapName = getCS2MapForMode(lobby);
         console.log(`[CS2] Режим: ${lobby.mode} → Карта: ${mapName}`);
         
-        // 4. Очищаем сервер от предыдущих игроков
+        // 4. Очищаем сервер
         console.log(`[CS2] Очистка сервера...`);
         await cs2Service.kickAll(assignedServer.host, assignedServer.port, assignedServer.rconPassword);
         
@@ -583,81 +583,71 @@ router.put('/:id/start', async (req, res) => {
           assignedServer.port,
           assignedServer.rconPassword,
           mapName,
-          0, // game_type (competitive)
-          1  // game_mode (competitive)
+          0,
+          1
         );
         
-        console.log(`[CS2] ✅ Сервер настроен! Подключение: connect ${assignedServer.host}:${assignedServer.port}`);
-              // 🆕 СОЗДАНИЕ И ЗАГРУЗКА MATCH CONFIG
-          try {
-            console.log('[CS2] Создаём match config для автоматического размещения игроков...');
-            
-            // Собираем игроков по командам
-            const teamASlots = lobby.slots.filter(s => s.user && s.team === 'A');
-            const teamBSlots = lobby.slots.filter(s => s.user && s.team === 'B');
-            
-            const teamAPlayers = {};
-            const teamBPlayers = {};
-            
-            // Собираем SteamID для Team A
-            for (const slot of teamASlots) {
-              const user = await User.findOne({ id: slot.user.id });
-              if (user?.steamId) {
-                teamAPlayers[user.steamId] = user.username;
-                console.log(`  [Config] Team A: ${user.username} (${user.steamId})`);
-              } else {
-                console.warn(`  ⚠️ Игрок ${slot.user.username} (Team A) не имеет SteamID`);
-              }
-            }
-            
-            // Собираем SteamID для Team B
-            for (const slot of teamBSlots) {
-              const user = await User.findOne({ id: slot.user.id });
-              if (user?.steamId) {
-                teamBPlayers[user.steamId] = user.username;
-                console.log(`  [Config] Team B: ${user.username} (${user.steamId})`);
-              } else {
-                console.warn(`  ⚠️ Игрок ${slot.user.username} (Team B) не имеет SteamID`);
-              }
-            }
-            
-            // Проверяем что есть хотя бы один игрок с SteamID
-            const totalPlayers = Object.keys(teamAPlayers).length + Object.keys(teamBPlayers).length;
-            
-            if (totalPlayers === 0) {
-              console.warn('[CS2] ⚠️ Ни у одного игрока нет SteamID, пропускаем match config');
-              console.warn('[CS2] ⚠️ Игроки выберут команды вручную');
-            } else {
-              console.log(`[CS2] Игроков с SteamID: ${totalPlayers}`);
-              
-              // Создаём и загружаем конфиг
-              await cs2Service.createAndLoadMatchConfig(
-                lobby.id,
-                teamAPlayers,
-                teamBPlayers,
-                mapName,
-                assignedServer.host,
-                assignedServer.port,
-                assignedServer.rconPassword
-              );
-              
-              console.log('[CS2] ✅ Match config загружен! Игроки будут автоматически размещены в команды.');
-            }
-            
-          } catch (configError) {
-            console.error('[CS2] ❌ Ошибка работы с match config:', configError.message);
-            console.warn('[CS2] ⚠️ Продолжаем БЕЗ конфига (игроки выберут команды вручную)');
-            // Не прерываем выполнение - игра запустится без конфига
-          }
+        // 🆕 6. ЖДЁМ ПОКА КАРТА ЗАГРУЗИТСЯ!
+        console.log('[CS2] Ожидание загрузки карты (5 секунд)...');
+        await new Promise(resolve => setTimeout(resolve, 5000));
         
-        } catch (cs2Error) {
-          console.error('[CS2] ❌ Ошибка настройки сервера:', cs2Error.message);
+        console.log(`[CS2] ✅ Сервер настроен! Подключение: connect ${assignedServer.host}:${assignedServer.port}`);
+        
+        // 7. СОЗДАНИЕ И ЗАГРУЗКА MATCH CONFIG (после загрузки карты!)
+        try {
+          console.log('[CS2] Создаём match config для автоматического размещения игроков...');
           
-          // Освобождаем сервер при ошибке
-          if (assignedServer) {
-            console.log(`[CS2] Освобождаем сервер ${assignedServer.id} после ошибки...`);
-            cs2ServerPool.releaseServer(assignedServer.id);
+          const teamASlots = lobby.slots.filter(s => s.user && s.team === 'A');
+          const teamBSlots = lobby.slots.filter(s => s.user && s.team === 'B');
+          
+          const teamAPlayers = {};
+          const teamBPlayers = {};
+          
+          for (const slot of teamASlots) {
+            const user = await User.findOne({ id: slot.user.id });
+            if (user?.steamId) {
+              teamAPlayers[user.steamId] = user.username;
+              console.log(`  [Config] Team A: ${user.username} (${user.steamId})`);
+            }
           }
+          
+          for (const slot of teamBSlots) {
+            const user = await User.findOne({ id: slot.user.id });
+            if (user?.steamId) {
+              teamBPlayers[user.steamId] = user.username;
+              console.log(`  [Config] Team B: ${user.username} (${user.steamId})`);
+            }
+          }
+          
+          const totalPlayers = Object.keys(teamAPlayers).length + Object.keys(teamBPlayers).length;
+          console.log(`[CS2] Игроков с SteamID: ${totalPlayers}`);
+          
+          if (totalPlayers > 0) {
+            await cs2Service.createAndLoadMatchConfig(
+              lobby.id,
+              teamAPlayers,
+              teamBPlayers,
+              mapName,
+              assignedServer.host,
+              assignedServer.port,
+              assignedServer.rconPassword
+            );
+            console.log('[CS2] ✅ Match config загружен! Игроки будут автоматически размещены в команды.');
+          } else {
+            console.log('[CS2] ⚠️ Нет игроков с SteamID, пропускаем match config');
+          }
+          
+        } catch (configError) {
+          console.error('[CS2] ❌ Ошибка работы с match config:', configError.message);
+          console.log('[CS2] ⚠️ Продолжаем БЕЗ конфига');
+        }
+        
+      } catch (cs2Error) {
+        console.error('[CS2] ❌ Ошибка настройки сервера:', cs2Error.message);
+        
+        if (assignedServer) {
+          cs2ServerPool.releaseServer(assignedServer.id);
+        }
         
         return res.status(500).json({ 
           message: `CS2 server error: ${cs2Error.message}` 
