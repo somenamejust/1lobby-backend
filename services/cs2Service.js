@@ -203,7 +203,8 @@ class CS2Service {
         "players_per_team": 1,                // Для 1v1 (меняй под режим!)
         "skip_veto": true,                    // Пропустить выбор карты
         "clinch_series": false,               // Не останавливать при достижении победы
-        "wingman": false                       // Обычный режим (не wingman)
+        "wingman": false,                       // Обычный режим (не wingman)
+        "matchzy_force_start": true
       };
       
       console.log('[CS2 Config] Конфиг:', JSON.stringify(matchConfig, null, 2));
