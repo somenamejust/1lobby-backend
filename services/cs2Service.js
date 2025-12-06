@@ -174,25 +174,6 @@ class CS2Service {
   }
 
   /**
-   * Выполнить RCON команду
-   */
-  async executeRcon(host, port, password, command) {
-    try {
-      // 🔧 ИСПРАВЛЕНИЕ: явно вызываем метод connect из текущего класса
-      const connection = await this.connect(host, port, password);
-      const response = await connection.send(command);
-      console.log(`[CS2 RCON] ${host}:${port} > ${command}`);
-      if (response) {
-        console.log(`[CS2 RCON] Response:`, response);
-      }
-      return response;
-    } catch (error) {
-      console.error(`[CS2 RCON] Ошибка выполнения команды "${command}":`, error.message);
-      throw error;
-    }
-  }
-
-  /**
    * Создать и загрузить match config
    */
   async createAndLoadMatchConfig(lobbyId, teamAPlayers, teamBPlayers, mapName, serverHost, serverPort, rconPassword) {
@@ -253,7 +234,7 @@ class CS2Service {
       console.log(`[CS2 Config] Загружаем конфиг в MatchZy...`);
       
       // 🔧 ИСПРАВЛЕНИЕ: Используем self вместо this
-      await self.executeRcon(serverHost, serverPort, rconPassword, `matchzy_loadmatch ${configFileName}`);
+      await self.executeCommand(serverHost, serverPort, rconPassword, `matchzy_loadmatch ${configFileName}`);
       
       console.log('[CS2 Config] ✅ Match config загружен в MatchZy!');
       
