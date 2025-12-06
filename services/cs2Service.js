@@ -241,12 +241,19 @@ class CS2Service {
       // 🆕 ДАЁМ НЕБОЛЬШУЮ ЗАДЕРЖКУ чтобы MatchZy обработал конфиг
       await new Promise(resolve => setTimeout(resolve, 2000)); // 2 секунды
       
-      // 🆕 АВТОМАТИЧЕСКИ ЗАПУСКАЕМ МАТЧ
-      console.log('[CS2 Match] Автостарт матча через 3 секунды...');
+      // 🆕 АВТОМАТИЧЕСКИ ЗАПУСКАЕМ МАТЧ ЧЕРЕЗ MATCHZY
+      console.log('[CS2 Match] Запускаем матч через MatchZy...');
+      await new Promise(resolve => setTimeout(resolve, 3000)); // Даём время на обработку конфига
+
+      // Принудительно делаем обоих игроков "ready"
+      await self.executeCommand(serverHost, serverPort, rconPassword, 'css_plugins list'); // Проверка что CS# работает
+      await new Promise(resolve => setTimeout(resolve, 1000));
+
+      // Запускаем матч через MatchZy
       await self.executeCommand(serverHost, serverPort, rconPassword, 'mp_warmup_end'); // Завершаем warmup
       await new Promise(resolve => setTimeout(resolve, 1000));
-      await self.executeCommand(serverHost, serverPort, rconPassword, 'mp_restartgame 1'); // Рестарт = старт матча
-      console.log('[CS2 Match] ✅ Матч запущен!');
+      await self.executeCommand(serverHost, serverPort, rconPassword, 'matchzy_autostart'); // MatchZy автостарт!
+      console.log('[CS2 Match] ✅ Матч запущен через MatchZy!');
       
       return configFileName;
     } catch (error) {
