@@ -741,8 +741,8 @@ router.post('/matchzy-events', async (req, res) => {
     const event = req.body;
     
     console.log('========================================');
-    console.log('🎮 [MatchZy Dispatcher] Получено событие');
-    console.log('Тип:', event.event);
+    console.log('🎮 [MatchZy Event] ПОЛНЫЕ ДАННЫЕ:');
+    console.log(JSON.stringify(event, null, 2));
     console.log('========================================');
 
     if (event.event === 'series_end') {
