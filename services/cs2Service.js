@@ -190,14 +190,20 @@ class CS2Service {
         matchid: String(lobbyId),
         num_maps: 1,
         maplist: [mapName],
-        team1: {
-          name: "Team A",
-          players: teamAPlayers
+        team1: { 
+          name: "Team A", 
+          players: teamAPlayers 
         },
-        team2: {
-          name: "Team B",
-          players: teamBPlayers
-        }
+        team2: { 
+          name: "Team B", 
+          players: teamBPlayers 
+        },
+        // 🆕 НАСТРОЙКИ АВТОСТАРТА
+        "minimum_ready_required": 0,          // Не ждать .ready команды
+        "players_per_team": 1,                // Для 1v1 (меняй под режим!)
+        "skip_veto": true,                    // Пропустить выбор карты
+        "clinch_series": false,               // Не останавливать при достижении победы
+        "wingman": false                       // Обычный режим (не wingman)
       };
       
       console.log('[CS2 Config] Конфиг:', JSON.stringify(matchConfig, null, 2));
@@ -226,20 +232,23 @@ class CS2Service {
       
       // Удаляем временный файл
       await fs.unlink(localPath);
-      
-      // 🔧 ИСПРАВЛЕНИЕ: Сохраняем ссылку на this ДО async операции
+    
+      // Загружаем через RCON
       const self = this;
-      
-      // Загружаем конфиг через RCON
-      console.log(`[CS2 Config] Загружаем конфиг в MatchZy...`);
-      
-      // 🔧 ИСПРАВЛЕНИЕ: Используем self вместо this
       await self.executeCommand(serverHost, serverPort, rconPassword, `matchzy_loadmatch ${configFileName}`);
-      
       console.log('[CS2 Config] ✅ Match config загружен в MatchZy!');
       
-      return configFileName;
+      // 🆕 ДАЁМ НЕБОЛЬШУЮ ЗАДЕРЖКУ чтобы MatchZy обработал конфиг
+      await new Promise(resolve => setTimeout(resolve, 2000)); // 2 секунды
       
+      // 🆕 АВТОМАТИЧЕСКИ ЗАПУСКАЕМ МАТЧ
+      console.log('[CS2 Match] Автостарт матча через 3 секунды...');
+      await self.executeCommand(serverHost, serverPort, rconPassword, 'mp_warmup_end'); // Завершаем warmup
+      await new Promise(resolve => setTimeout(resolve, 1000));
+      await self.executeCommand(serverHost, serverPort, rconPassword, 'mp_restartgame 1'); // Рестарт = старт матча
+      console.log('[CS2 Match] ✅ Матч запущен!');
+      
+      return configFileName;
     } catch (error) {
       console.error('[CS2 Config] ❌ Ошибка:', error.message);
       throw error;
