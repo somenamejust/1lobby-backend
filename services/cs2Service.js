@@ -198,12 +198,11 @@ class CS2Service {
           name: "Team B", 
           players: teamBPlayers 
         },
-        // 🆕 НАСТРОЙКИ АВТОСТАРТА
-        "minimum_ready_required": 0,          // Не ждать .ready команды
-        "players_per_team": 1,                // Для 1v1 (меняй под режим!)
-        "skip_veto": true,                    // Пропустить выбор карты
-        "clinch_series": false,               // Не останавливать при достижении победы
-        "wingman": false,                       // Обычный режим (не wingman)
+        "minimum_ready_required": 0,
+        "players_per_team": 1,
+        "skip_veto": true,
+        "clinch_series": false,
+        "wingman": false,
         "matchzy_force_start": true
       };
       
@@ -211,7 +210,9 @@ class CS2Service {
       
       // Имя файла
       const configFileName = `match_${lobbyId}.json`;
-      const remotePath = `/root/cs2-docker/cs2-data/game/csgo/cfg/MatchZy/${configFileName}`;
+      
+      // 🆕 ИСПРАВЛЕННЫЙ путь (без /root/)
+      const remotePath = `~/cs2-docker/cs2-data/game/csgo/cfg/MatchZy/${configFileName}`;
       
       // Создаём временный файл локально
       const localPath = `/tmp/${configFileName}`;
@@ -230,35 +231,40 @@ class CS2Service {
       }
       
       console.log(`[CS2 Config] ✅ Конфиг скопирован на сервер`);
-
-      // 🆕 ИСПРАВЛЯЕМ ВЛАДЕЛЬЦА на steam:steam через docker exec -u root
+      
+      // 🆕 ИСПРАВЛЯЕМ ВЛАДЕЛЬЦА на steam:steam
       const chownCmd = `ssh root@${serverHost} "docker exec -u root cs2-docker chown 1000:1000 /home/steam/cs2-dedicated/game/csgo/cfg/MatchZy/${configFileName}"`;
       await execPromise(chownCmd);
       console.log('[CS2 Config] ✅ Владелец изменён на steam:steam');
-
+      
+      // 🆕 ЗАДЕРЖКА для применения прав
+      await new Promise(resolve => setTimeout(resolve, 1000));
+      
       // Удаляем временный файл
       await fs.unlink(localPath);
     
-      // Загружаем через RCON
+      // 🆕 УВЕЛИЧЕННАЯ ЗАДЕРЖКА после changelevel (15 секунд вместо 5)
+      console.log('[CS2] Ожидание полной загрузки сервера (15 секунд)...');
+      await new Promise(resolve => setTimeout(resolve, 15000));
+      
+      // Загружаем через RCON ПЕРВЫЙ РАЗ
       const self = this;
       await self.executeCommand(serverHost, serverPort, rconPassword, `matchzy_loadmatch ${configFileName}`);
-      console.log('[CS2 Config] ✅ Match config загружен в MatchZy!');
+      console.log('[CS2 Config] ✅ Match config загружен в MatchZy (первая попытка)!');
       
-      // 🆕 ДАЁМ НЕБОЛЬШУЮ ЗАДЕРЖКУ чтобы MatchZy обработал конфиг
-      await new Promise(resolve => setTimeout(resolve, 2000)); // 2 секунды
+      // 🆕 ЖДЁМ ПОДКЛЮЧЕНИЯ ИГРОКОВ (30 секунд)
+      console.log('[CS2 Match] Ожидание подключения игроков (30 секунд)...');
+      await new Promise(resolve => setTimeout(resolve, 30000));
       
-      // 🆕 АВТОМАТИЧЕСКИ ЗАПУСКАЕМ МАТЧ ЧЕРЕЗ MATCHZY
-      console.log('[CS2 Match] Запускаем матч через MatchZy...');
-      await new Promise(resolve => setTimeout(resolve, 3000)); // Даём время на обработку конфига
+      // 🆕 ПЕРЕЗАГРУЖАЕМ КОНФИГ для уже подключенных игроков
+      console.log('[CS2 Match] Перезагрузка конфига для размещения подключенных игроков...');
+      await self.executeCommand(serverHost, serverPort, rconPassword, `matchzy_loadmatch ${configFileName}`);
+      await new Promise(resolve => setTimeout(resolve, 2000));
 
-      // Принудительно делаем обоих игроков "ready"
-      await self.executeCommand(serverHost, serverPort, rconPassword, 'css_plugins list'); // Проверка что CS# работает
-      await new Promise(resolve => setTimeout(resolve, 1000));
-
-      // 🆕 РЕСТАРТ чтобы применить конфиг к текущим игрокам
+      // Рестарт чтобы применить конфиг
       console.log('[CS2 Match] Применяем конфиг через рестарт...');
       await self.executeCommand(serverHost, serverPort, rconPassword, 'mp_restartgame 1');
-      await new Promise(resolve => setTimeout(resolve, 2000)); // Ждём рестарта
+      await new Promise(resolve => setTimeout(resolve, 2000));
 
       // Завершаем warmup и автостарт
       await self.executeCommand(serverHost, serverPort, rconPassword, 'mp_warmup_end');

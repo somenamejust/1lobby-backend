@@ -588,8 +588,6 @@ router.put('/:id/start', async (req, res) => {
         );
         
         // 🆕 6. ЖДЁМ ПОКА КАРТА ЗАГРУЗИТСЯ!
-        console.log('[CS2] Ожидание загрузки карты (5 секунд)...');
-        await new Promise(resolve => setTimeout(resolve, 3000));
         
         console.log(`[CS2] ✅ Сервер настроен! Подключение: connect ${assignedServer.host}:${assignedServer.port}`);
         
