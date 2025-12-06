@@ -172,6 +172,93 @@ class CS2Service {
     }
     this.connections.clear();
   }
+
+   /**
+   * Выполнить RCON команду
+   */
+  async executeRcon(host, port, password, command) {
+    try {
+      const connection = await this.connect(host, port, password);
+      const response = await connection.send(command);
+      console.log(`[CS2 RCON] ${host}:${port} > ${command}`);
+      if (response) {
+        console.log(`[CS2 RCON] Response:`, response);
+      }
+      return response;
+    } catch (error) {
+      console.error(`[CS2 RCON] Ошибка выполнения команды "${command}":`, error.message);
+      throw error;
+    }
+  }
+
+  /**
+   * Создать и загрузить match config
+   */
+  async createAndLoadMatchConfig(lobbyId, teamAPlayers, teamBPlayers, mapName, serverHost, serverPort, rconPassword) {
+    const { exec } = require('child_process');
+    const util = require('util');
+    const fs = require('fs').promises;
+    const execPromise = util.promisify(exec);
+    
+    try {
+      console.log('[CS2 Config] Создаём match config...');
+      
+      // Формируем конфиг
+      const matchConfig = {
+        matchid: String(lobbyId),
+        num_maps: 1,
+        maplist: [mapName],
+        team1: {
+          name: "Team A",
+          players: teamAPlayers
+        },
+        team2: {
+          name: "Team B",
+          players: teamBPlayers
+        }
+      };
+      
+      console.log('[CS2 Config] Конфиг:', JSON.stringify(matchConfig, null, 2));
+      
+      // Имя файла
+      const configFileName = `match_${lobbyId}.json`;
+      const remotePath = `/root/cs2-docker/cs2-data/game/csgo/cfg/MatchZy/${configFileName}`;
+      
+      // Создаём временный файл локально
+      const localPath = `/tmp/${configFileName}`;
+      const configContent = JSON.stringify(matchConfig, null, 2);
+      await fs.writeFile(localPath, configContent);
+      
+      console.log(`[CS2 Config] Временный файл создан: ${localPath}`);
+      
+      // Копируем на CS2 сервер через SCP
+      const scpCommand = `scp ${localPath} root@${serverHost}:${remotePath}`;
+      console.log(`[CS2 Config] Копируем на сервер...`);
+      
+      const { stdout, stderr } = await execPromise(scpCommand);
+      if (stderr && !stderr.includes('Warning')) {
+        console.warn('[CS2 Config] SCP stderr:', stderr);
+      }
+      
+      console.log(`[CS2 Config] ✅ Конфиг скопирован на сервер`);
+      
+      // Удаляем временный файл
+      await fs.unlink(localPath);
+      
+      // Загружаем конфиг через RCON
+      console.log(`[CS2 Config] Загружаем конфиг в MatchZy...`);
+      await this.executeRcon(serverHost, serverPort, rconPassword, `matchzy_loadmatch ${configFileName}`);
+      
+      console.log('[CS2 Config] ✅ Match config загружен в MatchZy!');
+      
+      return configFileName;
+      
+    } catch (error) {
+      console.error('[CS2 Config] ❌ Ошибка:', error.message);
+      throw error;
+    }
+  }
+
 }
 
 module.exports = new CS2Service();

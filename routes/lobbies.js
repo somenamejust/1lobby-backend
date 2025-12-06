@@ -588,21 +588,83 @@ router.put('/:id/start', async (req, res) => {
         );
         
         console.log(`[CS2] ✅ Сервер настроен! Подключение: connect ${assignedServer.host}:${assignedServer.port}`);
+              // 🆕 СОЗДАНИЕ И ЗАГРУЗКА MATCH CONFIG
+          try {
+            console.log('[CS2] Создаём match config для автоматического размещения игроков...');
+            
+            // Собираем игроков по командам
+            const teamASlots = lobby.slots.filter(s => s.user && s.team === 'A');
+            const teamBSlots = lobby.slots.filter(s => s.user && s.team === 'B');
+            
+            const teamAPlayers = {};
+            const teamBPlayers = {};
+            
+            // Собираем SteamID для Team A
+            for (const slot of teamASlots) {
+              const user = await User.findOne({ id: slot.user.id });
+              if (user?.steamId) {
+                teamAPlayers[user.steamId] = user.username;
+                console.log(`  [Config] Team A: ${user.username} (${user.steamId})`);
+              } else {
+                console.warn(`  ⚠️ Игрок ${slot.user.username} (Team A) не имеет SteamID`);
+              }
+            }
+            
+            // Собираем SteamID для Team B
+            for (const slot of teamBSlots) {
+              const user = await User.findOne({ id: slot.user.id });
+              if (user?.steamId) {
+                teamBPlayers[user.steamId] = user.username;
+                console.log(`  [Config] Team B: ${user.username} (${user.steamId})`);
+              } else {
+                console.warn(`  ⚠️ Игрок ${slot.user.username} (Team B) не имеет SteamID`);
+              }
+            }
+            
+            // Проверяем что есть хотя бы один игрок с SteamID
+            const totalPlayers = Object.keys(teamAPlayers).length + Object.keys(teamBPlayers).length;
+            
+            if (totalPlayers === 0) {
+              console.warn('[CS2] ⚠️ Ни у одного игрока нет SteamID, пропускаем match config');
+              console.warn('[CS2] ⚠️ Игроки выберут команды вручную');
+            } else {
+              console.log(`[CS2] Игроков с SteamID: ${totalPlayers}`);
+              
+              // Создаём и загружаем конфиг
+              await cs2Service.createAndLoadMatchConfig(
+                lobby.id,
+                teamAPlayers,
+                teamBPlayers,
+                mapName,
+                assignedServer.host,
+                assignedServer.port,
+                assignedServer.rconPassword
+              );
+              
+              console.log('[CS2] ✅ Match config загружен! Игроки будут автоматически размещены в команды.');
+            }
+            
+          } catch (configError) {
+            console.error('[CS2] ❌ Ошибка работы с match config:', configError.message);
+            console.warn('[CS2] ⚠️ Продолжаем БЕЗ конфига (игроки выберут команды вручную)');
+            // Не прерываем выполнение - игра запустится без конфига
+          }
         
-      } catch (cs2Error) {
-        console.error('[CS2] ❌ Ошибка настройки сервера:', cs2Error.message);
-        
-        // Освобождаем сервер при ошибке
-        if (assignedServer) {
-          console.log(`[CS2] Освобождаем сервер ${assignedServer.id} после ошибки...`);
-          cs2ServerPool.releaseServer(assignedServer.id);
-        }
+        } catch (cs2Error) {
+          console.error('[CS2] ❌ Ошибка настройки сервера:', cs2Error.message);
+          
+          // Освобождаем сервер при ошибке
+          if (assignedServer) {
+            console.log(`[CS2] Освобождаем сервер ${assignedServer.id} после ошибки...`);
+            cs2ServerPool.releaseServer(assignedServer.id);
+          }
         
         return res.status(500).json({ 
           message: `CS2 server error: ${cs2Error.message}` 
         });
       }
     }
+    
 
     // ========== ОБЩАЯ ЛОГИКА ==========
     lobby.status = 'in_progress';
