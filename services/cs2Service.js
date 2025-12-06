@@ -230,7 +230,12 @@ class CS2Service {
       }
       
       console.log(`[CS2 Config] ✅ Конфиг скопирован на сервер`);
-      
+
+      // 🆕 ИСПРАВЛЯЕМ ВЛАДЕЛЬЦА на steam:steam через docker exec -u root
+      const chownCmd = `ssh root@${serverHost} "docker exec -u root cs2-docker chown 1000:1000 /home/steam/cs2-dedicated/game/csgo/cfg/MatchZy/${configFileName}"`;
+      await execPromise(chownCmd);
+      console.log('[CS2 Config] ✅ Владелец изменён на steam:steam');
+
       // Удаляем временный файл
       await fs.unlink(localPath);
     
