@@ -606,7 +606,7 @@ router.put('/:id/start', async (req, res) => {
         
         // 6. СОЗДАНИЕ И ЗАГРУЗКА MATCH CONFIG (ПОСЛЕ загрузки карты!)
         try {
-          console.log('[CS2] Создаём match config для автоматического размещения игроков...');
+          console.log('[CS2] Размещаем игроков в команды...');
           
           const teamASlots = lobby.slots.filter(s => s.user && s.team === 'A');
           const teamBSlots = lobby.slots.filter(s => s.user && s.team === 'B');
@@ -634,23 +634,20 @@ router.put('/:id/start', async (req, res) => {
           console.log(`[CS2] Игроков с SteamID: ${totalPlayers}`);
           
           if (totalPlayers > 0) {
-            await cs2Service.createAndLoadMatchConfig(
-              lobby.id,
+            await cs2Service.assignPlayersToTeams(
               teamAPlayers,
               teamBPlayers,
-              mapName,
               assignedServer.host,
               assignedServer.port,
               assignedServer.rconPassword
             );
-            console.log('[CS2] ✅ Match config загружен! Игроки будут автоматически размещены в команды.');
+            console.log('[CS2] ✅ Игроки размещены через matchzy_addplayer!');
           } else {
-            console.log('[CS2] ⚠️ Нет игроков с SteamID, пропускаем match config');
+            console.log('[CS2] ⚠️ Нет игроков с SteamID');
           }
           
         } catch (configError) {
-          console.error('[CS2] ❌ Ошибка работы с match config:', configError.message);
-          console.log('[CS2] ⚠️ Продолжаем БЕЗ конфига');
+          console.error('[CS2] ❌ Ошибка размещения игроков:', configError.message);
         }
         
       } catch (cs2Error) {
