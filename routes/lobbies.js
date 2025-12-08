@@ -463,7 +463,7 @@ router.put('/:id/start', async (req, res) => {
     console.log('Mode:', lobby.mode);
     console.log('Current Status:', lobby.status);
 
-    // Проверки безопасности
+    // ========== ПРОВЕРКИ БЕЗОПАСНОСТИ ==========
     if (lobby.status === 'in_progress') {
       console.log('⚠️ [Start Game] Игра уже запущена!');
       return res.status(400).json({ message: "Game already in progress" });
@@ -477,6 +477,20 @@ router.put('/:id/start', async (req, res) => {
       return res.status(403).json({ message: "Only the host can start the game!" });
     }
 
+    // 🆕 ========== СРАЗУ МЕНЯЕМ СТАТУС И ВОЗВРАЩАЕМ ОТВЕТ! ==========
+    lobby.status = 'in_progress';
+    lobby.countdownStartTime = null;
+    lobby.startedAt = new Date();
+    const updatedLobby = await lobby.save();
+
+    const io = req.app.get('socketio');
+    io.in(req.params.id).emit('lobbyUpdated', updatedLobby.toObject());
+
+    // 🆕 ВОЗВРАЩАЕМ ОТВЕТ НЕМЕДЛЕННО (модалка появится сразу!)
+    res.status(200).json(updatedLobby.toObject());
+
+    // 🆕 ========== ВСЯ НАСТРОЙКА ИДЁТ В ФОНЕ ==========
+    
     // ========== DOTA 2 ЛОГИКА ==========
     if (lobby.game === 'Dota 2') {
       
@@ -567,6 +581,7 @@ router.put('/:id/start', async (req, res) => {
         
         // 2. Сохраняем информацию о сервере
         lobby.cs2ServerId = assignedServer.id;
+        await lobby.save();
         
         // 3. Определяем карту
         const mapName = getCS2MapForMode(lobby);
@@ -587,11 +602,9 @@ router.put('/:id/start', async (req, res) => {
           1
         );
         
-        // 🆕 6. ЖДЁМ ПОКА КАРТА ЗАГРУЗИТСЯ!
-        
         console.log(`[CS2] ✅ Сервер настроен! Подключение: connect ${assignedServer.host}:${assignedServer.port}`);
         
-        // 7. СОЗДАНИЕ И ЗАГРУЗКА MATCH CONFIG (после загрузки карты!)
+        // 6. СОЗДАНИЕ И ЗАГРУЗКА MATCH CONFIG (ПОСЛЕ загрузки карты!)
         try {
           console.log('[CS2] Создаём match config для автоматического размещения игроков...');
           
@@ -644,27 +657,10 @@ router.put('/:id/start', async (req, res) => {
         console.error('[CS2] ❌ Ошибка настройки сервера:', cs2Error.message);
         
         if (assignedServer) {
-          cs2ServerPool.releaseServer(assignedServer.id);
+          cs2ServerPool.releaseServer(lobby.id);
         }
-        
-        return res.status(500).json({ 
-          message: `CS2 server error: ${cs2Error.message}` 
-        });
       }
     }
-    
-
-    // ========== ОБЩАЯ ЛОГИКА ==========
-    lobby.status = 'in_progress';
-    lobby.countdownStartTime = null;
-    lobby.startedAt = new Date();
-
-    const updatedLobby = await lobby.save();
-
-    const io = req.app.get('socketio');
-    io.in(req.params.id).emit('lobbyUpdated', updatedLobby.toObject());
-
-    res.status(200).json(updatedLobby.toObject());
 
   } catch (error) {
     console.error("❌ Error starting game:", error);

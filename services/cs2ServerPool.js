@@ -5,7 +5,7 @@ class CS2ServerPool {
         id: 'cs2-main',
         host: '134.209.246.42',
         port: 27015,
-        rconPassword: 'changeme', // 🔴 ЗАМЕНИ на свой!
+        rconPassword: 'changeme',
         status: 'available', // available, in_use, offline
         currentLobbyId: null,
         maxPlayers: 10
@@ -33,7 +33,6 @@ class CS2ServerPool {
       throw new Error('No available CS2 servers. All servers are busy.');
     }
     
-    // Возвращаем первый свободный
     return available[0];
   }
 
@@ -48,11 +47,19 @@ class CS2ServerPool {
     
     console.log(`[CS2Pool] Server ${server.id} assigned to lobby ${lobbyId}`);
     
+    // 🆕 АВТООСВОБОЖДЕНИЕ ЧЕРЕЗ 10 МИНУТ (на случай зависания)
+    setTimeout(() => {
+      if (server.currentLobbyId === lobbyId && server.status === 'in_use') {
+        console.log(`[CS2Pool] ⚠️ Автоосвобождение сервера ${server.id} (таймаут 10 мин)`);
+        this.releaseServerByLobby(lobbyId);
+      }
+    }, 10 * 60 * 1000);
+    
     return server;
   }
 
   /**
-   * Освободить сервер
+   * Освободить сервер по ID сервера
    */
   releaseServer(serverId) {
     const server = this.servers.find(s => s.id === serverId);
@@ -69,10 +76,34 @@ class CS2ServerPool {
   }
 
   /**
+   * 🆕 Освободить сервер по ID лобби
+   */
+  releaseServerByLobby(lobbyId) {
+    const server = this.servers.find(s => s.currentLobbyId === lobbyId);
+    
+    if (!server) {
+      console.warn(`[CS2Pool] No server found for lobby ${lobbyId}`);
+      return;
+    }
+    
+    server.status = 'available';
+    server.currentLobbyId = null;
+    
+    console.log(`[CS2Pool] Server ${server.id} released (lobby ${lobbyId})`);
+  }
+
+  /**
    * Получить сервер по ID
    */
   getServerById(serverId) {
     return this.servers.find(s => s.id === serverId);
+  }
+
+  /**
+   * 🆕 Получить сервер по ID лобби
+   */
+  getServerByLobby(lobbyId) {
+    return this.servers.find(s => s.currentLobbyId === lobbyId);
   }
 
   /**

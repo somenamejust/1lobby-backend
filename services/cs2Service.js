@@ -185,7 +185,6 @@ class CS2Service {
     try {
       console.log('[CS2 Config] Создаём match config...');
       
-      // Формируем конфиг
       const matchConfig = {
         matchid: String(lobbyId),
         num_maps: 1,
@@ -199,78 +198,90 @@ class CS2Service {
           players: teamBPlayers 
         },
         "minimum_ready_required": 0,
-        "players_per_team": 1,
+        "players_per_team": Object.keys(teamAPlayers).length,
         "skip_veto": true,
         "clinch_series": false,
-        "wingman": false,
-        "matchzy_force_start": true
+        "wingman": false
       };
       
-      console.log('[CS2 Config] Конфиг:', JSON.stringify(matchConfig, null, 2));
+      console.log('[CS2 Config] Match config:', JSON.stringify(matchConfig, null, 2));
       
-      // Имя файла
       const configFileName = `match_${lobbyId}.json`;
-      
-      // 🆕 ИСПРАВЛЕННЫЙ путь (без /root/)
       const remotePath = `~/cs2-docker/cs2-data/game/csgo/cfg/MatchZy/${configFileName}`;
-      
-      // Создаём временный файл локально
       const localPath = `/tmp/${configFileName}`;
       const configContent = JSON.stringify(matchConfig, null, 2);
       await fs.writeFile(localPath, configContent);
       
-      console.log(`[CS2 Config] Временный файл создан: ${localPath}`);
-      
-      // Копируем на CS2 сервер через SCP
       const scpCommand = `scp ${localPath} root@${serverHost}:${remotePath}`;
-      console.log(`[CS2 Config] Копируем на сервер...`);
+      await execPromise(scpCommand);
+      console.log(`[CS2 Config] ✅ Конфиг скопирован`);
       
-      const { stdout, stderr } = await execPromise(scpCommand);
-      if (stderr && !stderr.includes('Warning')) {
-        console.warn('[CS2 Config] SCP stderr:', stderr);
-      }
-      
-      console.log(`[CS2 Config] ✅ Конфиг скопирован на сервер`);
-      
-      // 🆕 ИСПРАВЛЯЕМ ВЛАДЕЛЬЦА на steam:steam
       const chownCmd = `ssh root@${serverHost} "docker exec -u root cs2-docker chown 1000:1000 /home/steam/cs2-dedicated/game/csgo/cfg/MatchZy/${configFileName}"`;
       await execPromise(chownCmd);
-      console.log('[CS2 Config] ✅ Владелец изменён на steam:steam');
+      console.log('[CS2 Config] ✅ Владелец изменён');
       
-      // 🆕 ЗАДЕРЖКА для применения прав
-      await new Promise(resolve => setTimeout(resolve, 1000));
-      
-      // Удаляем временный файл
       await fs.unlink(localPath);
     
-      // 🆕 УВЕЛИЧЕННАЯ ЗАДЕРЖКА после changelevel (15 секунд вместо 5)
-      console.log('[CS2] Ожидание полной загрузки сервера (15 секунд)...');
-      await new Promise(resolve => setTimeout(resolve, 15000));
+      // 🆕 Ждём 10 секунд после changelevel (достаточно!)
+      console.log('[CS2] Ожидание загрузки карты (10 сек)...');
+      await new Promise(resolve => setTimeout(resolve, 10000));
       
-      // Загружаем через RCON ПЕРВЫЙ РАЗ
       const self = this;
-      await self.executeCommand(serverHost, serverPort, rconPassword, `matchzy_loadmatch ${configFileName}`);
-      console.log('[CS2 Config] ✅ Match config загружен в MatchZy (первая попытка)!');
       
-      // 🆕 ЖДЁМ ПОДКЛЮЧЕНИЯ ИГРОКОВ (30 секунд)
-      console.log('[CS2 Match] Ожидание подключения игроков (30 секунд)...');
-      await new Promise(resolve => setTimeout(resolve, 30000));
-      
-      // 🆕 ПЕРЕЗАГРУЖАЕМ КОНФИГ для уже подключенных игроков
-      console.log('[CS2 Match] Перезагрузка конфига для размещения подключенных игроков...');
+      // 🆕 Загружаем конфиг СРАЗУ (MatchZy теперь знает расстановку)
+      console.log('[CS2] Загружаем match config в MatchZy...');
       await self.executeCommand(serverHost, serverPort, rconPassword, `matchzy_loadmatch ${configFileName}`);
+      console.log('[CS2 Config] ✅ MatchZy знает кто в какой команде!');
       await new Promise(resolve => setTimeout(resolve, 2000));
+      
+      // 🆕 АКТИВНОЕ ОЖИДАНИЕ игроков (проверяем каждые 3 секунды)
+      console.log('[CS2] Ожидание подключения игроков...');
+      const expectedPlayers = Object.keys(teamAPlayers).length + Object.keys(teamBPlayers).length;
+      let connectedPlayers = 0;
+      let attempts = 0;
+      const maxAttempts = 20; // 20 попыток по 3 сек = максимум 1 минута
+      
+      while (connectedPlayers < expectedPlayers && attempts < maxAttempts) {
+        attempts++;
+        
+        try {
+          const statusOutput = await self.executeCommand(serverHost, serverPort, rconPassword, 'status');
+          
+          // Считаем игроков (строки с [U:1:...] но без BOT)
+          const lines = statusOutput.split('\n');
+          connectedPlayers = lines.filter(line => 
+            line.includes('[U:1:') && !line.includes('BOT')
+          ).length;
+          
+          console.log(`[CS2] Попытка ${attempts}/${maxAttempts}: Подключено ${connectedPlayers}/${expectedPlayers} игроков`);
+          
+          if (connectedPlayers >= expectedPlayers) {
+            console.log('[CS2] ✅ Все игроки подключены!');
+            break;
+          }
+          
+          // Ждём 3 секунды перед следующей проверкой
+          await new Promise(resolve => setTimeout(resolve, 3000));
+          
+        } catch (err) {
+          console.warn(`[CS2] Ошибка проверки status: ${err.message}`);
+        }
+      }
+      
+      if (connectedPlayers < expectedPlayers) {
+        console.warn(`[CS2] ⚠️ Подключено только ${connectedPlayers}/${expectedPlayers}, но продолжаем...`);
+      }
 
-      // Рестарт чтобы применить конфиг
-      console.log('[CS2 Match] Применяем конфиг через рестарт...');
+      // 🆕 ТЕПЕРЬ размещаем игроков (они УЖЕ на сервере!)
+      console.log('[CS2] Размещаем игроков в команды...');
+      await self.executeCommand(serverHost, serverPort, rconPassword, `matchzy_loadmatch ${configFileName}`);
+      await new Promise(resolve => setTimeout(resolve, 3000));
+
+      // Рестарт для применения
+      console.log('[CS2] Применяем через рестарт...');
       await self.executeCommand(serverHost, serverPort, rconPassword, 'mp_restartgame 1');
-      await new Promise(resolve => setTimeout(resolve, 2000));
 
-      // Завершаем warmup и автостарт
-      await self.executeCommand(serverHost, serverPort, rconPassword, 'mp_warmup_end');
-      await new Promise(resolve => setTimeout(resolve, 1000));
-      await self.executeCommand(serverHost, serverPort, rconPassword, 'matchzy_autostart');
-      console.log('[CS2 Match] ✅ Матч запущен через MatchZy!');
+      console.log('[CS2 Match] ✅ Игроки размещены в команды!');
 
       return configFileName;
     } catch (error) {
