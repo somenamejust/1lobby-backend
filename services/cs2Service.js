@@ -182,11 +182,32 @@ class CS2Service {
       
       const self = this;
       
-      // 🆕 Ждём 10 секунд после changelevel
-      console.log('[CS2] Ожидание загрузки карты (10 сек)...');
-      await new Promise(resolve => setTimeout(resolve, 10000));
+      // 🆕 УВЕЛИЧИВАЕМ ЗАДЕРЖКУ до 15 секунд!
+      console.log('[CS2] Ожидание загрузки карты (15 сек)...');
+      await new Promise(resolve => setTimeout(resolve, 15000));
       
-      // 🆕 АКТИВНОЕ ОЖИДАНИЕ игроков
+      // 🆕 ПРОВЕРЯЕМ ДОСТУПНОСТЬ RCON перед началом
+      console.log('[CS2] Проверка доступности RCON...');
+      let rconReady = false;
+      let rconAttempts = 0;
+      
+      while (!rconReady && rconAttempts < 10) {
+        rconAttempts++;
+        try {
+          await self.executeCommand(serverHost, serverPort, rconPassword, 'echo "RCON OK"');
+          rconReady = true;
+          console.log('[CS2] ✅ RCON доступен!');
+        } catch (err) {
+          console.log(`[CS2] RCON попытка ${rconAttempts}/10: ${err.message}`);
+          await new Promise(resolve => setTimeout(resolve, 2000));
+        }
+      }
+      
+      if (!rconReady) {
+        throw new Error('CS2 сервер не отвечает на RCON после 20+ секунд');
+      }
+      
+      // 🆕 ТЕПЕРЬ ЖДЁМ ИГРОКОВ
       const expectedPlayers = Object.keys(teamAPlayers).length + Object.keys(teamBPlayers).length;
       let connectedPlayers = 0;
       let attempts = 0;
@@ -214,29 +235,38 @@ class CS2Service {
           await new Promise(resolve => setTimeout(resolve, 3000));
           
         } catch (err) {
-          console.warn(`[CS2] Ошибка проверки: ${err.message}`);
+          console.warn(`[CS2] Ошибка проверки игроков: ${err.message}`);
+          await new Promise(resolve => setTimeout(resolve, 3000));
         }
       }
       
       if (connectedPlayers < expectedPlayers) {
-        console.warn(`[CS2] ⚠️ Подключено только ${connectedPlayers}/${expectedPlayers}`);
+        console.warn(`[CS2] ⚠️ Подключено только ${connectedPlayers}/${expectedPlayers}, продолжаем...`);
       }
 
-      // 🆕 ТЕПЕРЬ ПРИНУДИТЕЛЬНО ДОБАВЛЯЕМ КАЖДОГО ИГРОКА В КОМАНДУ!
+      // 🆕 РАЗМЕЩАЕМ ИГРОКОВ через matchzy_addplayer
       console.log('[CS2] Добавляем игроков в Team A...');
       for (const [steamId, username] of Object.entries(teamAPlayers)) {
         const command = `matchzy_addplayer ${steamId} team1 "${username}"`;
         console.log(`[CS2] > ${command}`);
-        await self.executeCommand(serverHost, serverPort, rconPassword, command);
-        await new Promise(resolve => setTimeout(resolve, 500));
+        try {
+          await self.executeCommand(serverHost, serverPort, rconPassword, command);
+          await new Promise(resolve => setTimeout(resolve, 500));
+        } catch (err) {
+          console.error(`[CS2] ❌ Не удалось добавить ${username}: ${err.message}`);
+        }
       }
       
       console.log('[CS2] Добавляем игроков в Team B...');
       for (const [steamId, username] of Object.entries(teamBPlayers)) {
         const command = `matchzy_addplayer ${steamId} team2 "${username}"`;
         console.log(`[CS2] > ${command}`);
-        await self.executeCommand(serverHost, serverPort, rconPassword, command);
-        await new Promise(resolve => setTimeout(resolve, 500));
+        try {
+          await self.executeCommand(serverHost, serverPort, rconPassword, command);
+          await new Promise(resolve => setTimeout(resolve, 500));
+        } catch (err) {
+          console.error(`[CS2] ❌ Не удалось добавить ${username}: ${err.message}`);
+        }
       }
 
       console.log('[CS2 Match] ✅ Все игроки размещены в команды!');
