@@ -182,11 +182,11 @@ class CS2Service {
       
       const self = this;
       
-      // 🆕 УВЕЛИЧИВАЕМ ЗАДЕРЖКУ до 15 секунд!
+      // Ожидание загрузки карты
       console.log('[CS2] Ожидание загрузки карты (15 сек)...');
       await new Promise(resolve => setTimeout(resolve, 15000));
       
-      // 🆕 ПРОВЕРЯЕМ ДОСТУПНОСТЬ RCON перед началом
+      // Проверка доступности RCON
       console.log('[CS2] Проверка доступности RCON...');
       let rconReady = false;
       let rconAttempts = 0;
@@ -207,7 +207,7 @@ class CS2Service {
         throw new Error('CS2 сервер не отвечает на RCON после 20+ секунд');
       }
       
-      // 🆕 ТЕПЕРЬ ЖДЁМ ИГРОКОВ
+      // Ожидание подключения игроков
       const expectedPlayers = Object.keys(teamAPlayers).length + Object.keys(teamBPlayers).length;
       let connectedPlayers = 0;
       let attempts = 0;
@@ -220,7 +220,23 @@ class CS2Service {
         
         try {
           const statusOutput = await self.executeCommand(serverHost, serverPort, rconPassword, 'status');
+          
+          // 🆕 ДЕТАЛЬНОЕ ЛОГИРОВАНИЕ
+          console.log('==========================================');
+          console.log('[CS2 DEBUG] RAW STATUS OUTPUT:');
+          console.log(statusOutput);
+          console.log('==========================================');
+          
           const lines = statusOutput.split('\n');
+          console.log(`[CS2 DEBUG] Total lines: ${lines.length}`);
+          
+          // Покажем каждую строку с игроками
+          lines.forEach((line, index) => {
+            if (line.includes('U:1:') || line.includes('BOT')) {
+              console.log(`[CS2 DEBUG] Line ${index}: ${line}`);
+            }
+          });
+          
           connectedPlayers = lines.filter(line => 
             line.includes('[U:1:') && !line.includes('BOT')
           ).length;
@@ -244,7 +260,7 @@ class CS2Service {
         console.warn(`[CS2] ⚠️ Подключено только ${connectedPlayers}/${expectedPlayers}, продолжаем...`);
       }
 
-      // 🆕 РАЗМЕЩАЕМ ИГРОКОВ через matchzy_addplayer
+      // Размещение игроков
       console.log('[CS2] Добавляем игроков в Team A...');
       for (const [steamId, username] of Object.entries(teamAPlayers)) {
         const command = `matchzy_addplayer ${steamId} team1 "${username}"`;
