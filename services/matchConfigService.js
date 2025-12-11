@@ -10,28 +10,24 @@ class MatchConfigService {
       privateKey: require('fs').readFileSync('/root/.ssh/id_rsa')
     };
     
-    this.configDir = '/root/cs2-configs'; // Локальная папка для конфигов
-    this.tempDir = '/tmp/matchzy-configs'; // 🆕 Временная папка на хосте
-    this.serverConfigDir = '/home/steam/cs2-dedicated/game/csgo/cfg/MatchZy'; // На CS2 сервере
+    this.configDir = '/root/cs2-configs';
+    this.tempDir = '/tmp/matchzy-configs';
+    this.containerPath = '/home/steam/cs2-dedicated/game/csgo/cfg/MatchZy';
   }
 
-  /**
-   * Создать и загрузить match config на сервер
-   */
   async createAndUploadMatchConfig(matchData) {
     const { matchId, map, teamA, teamB } = matchData;
     
-    // 1. Формируем JSON config для MatchZy
     const config = {
       "matchid": `1lobby_${matchId}`,
       "num_maps": 1,
-      "maplist": [map], // 🆕 ПРАВИЛЬНАЯ КАРТА ИЗ ЛОББИ!
+      "maplist": [map],
       "skip_veto": true,
       "players_per_team": Math.max(Object.keys(teamA).length, Object.keys(teamB).length),
-      "min_players_to_ready": 0, // Автостарт
+      "min_players_to_ready": 0,
       "team1": {
         "name": "Team A",
-        "players": teamA // { "76561198841464187": "durachek", ... }
+        "players": teamA
       },
       "team2": {
         "name": "Team B",
@@ -41,165 +37,154 @@ class MatchConfigService {
 
     console.log('[MatchConfig] Создан config:', JSON.stringify(config, null, 2));
 
-    // 2. Создаем локальную директорию
     const fs = require('fs').promises;
     await fs.mkdir(this.configDir, { recursive: true });
 
-    // 3. Сохраняем локально
     const filename = `match_${matchId}.json`;
     const localPath = path.join(this.configDir, filename);
     await fs.writeFile(localPath, JSON.stringify(config, null, 2));
     console.log(`[MatchConfig] Сохранён локально: ${localPath}`);
 
-    // 4. 🆕 Загружаем на хост во временную папку
-    const tempPath = `${this.tempDir}/${filename}`;
-    await this.uploadFileViaSCP(localPath, tempPath);
+    // 🆕 УПРОЩЕННЫЙ ПОДХОД: Загружаем СРАЗУ в контейнер
+    await this.uploadToContainer(localPath, filename);
 
-    // 5. 🆕 Копируем внутрь контейнера через docker cp
-    await this.copyToContainer(filename);
+    console.log(`[MatchConfig] ✅ Файл загружен в контейнер`);
 
-    // 6. 🆕 Удаляем временный файл
-    await this.cleanupTempFile(filename);
-
-    console.log(`[MatchConfig] ✅ Файл загружен в контейнер: ${this.containerPath}/${filename}`);
-
-    return `cfg/MatchZy/${filename}`; // Путь для MatchZy команды
+    return `cfg/MatchZy/${filename}`;
   }
 
   /**
-   * 🆕 Копировать файл внутрь контейнера
+   * 🆕 НОВЫЙ МЕТОД: Загрузка НАПРЯМУЮ в контейнер
    */
-  async copyToContainer(filename) {
+  async uploadToContainer(localPath, filename) {
     return new Promise((resolve, reject) => {
       const conn = new Client();
       
       conn.on('ready', () => {
-        const tempPath = `${this.tempDir}/${filename}`;
-        const containerPath = `${this.containerPath}/${filename}`;
+        console.log('[SSH] Соединение установлено');
         
-        // Сначала создаем папку в контейнере
-        const mkdirCmd = `docker exec cs2-docker mkdir -p ${this.containerPath}`;
+        // Шаг 1: Создаем временную папку на хосте
+        const tempPath = `${this.tempDir}/${filename}`;
+        const mkdirCmd = `mkdir -p ${this.tempDir}`;
+        
+        console.log('[SSH] Создаю временную папку:', this.tempDir);
         
         conn.exec(mkdirCmd, (err, stream) => {
           if (err) {
+            console.error('[SSH] ❌ Ошибка mkdir:', err.message);
             conn.end();
             return reject(err);
           }
-          
-          stream.on('close', () => {
-            // Теперь копируем файл
-            const cpCmd = `docker cp ${tempPath} cs2-docker:${containerPath}`;
+
+          stream.on('close', (code) => {
+            console.log(`[SSH] mkdir завершен с кодом: ${code}`);
             
-            conn.exec(cpCmd, (err, stream) => {
-              if (err) {
-                conn.end();
-                return reject(err);
-              }
-              
-              stream.on('close', (code) => {
-                conn.end();
-                if (code === 0) {
-                  console.log('[Docker] ✅ Файл скопирован в контейнер');
-                  resolve();
-                } else {
-                  reject(new Error(`docker cp failed with code ${code}`));
-                }
-              });
-              
-              stream.on('data', (data) => {
-                console.log('[Docker]', data.toString());
-              });
-              
-              stream.stderr.on('data', (data) => {
-                console.error('[Docker Error]', data.toString());
-              });
-            });
-          });
-          
-          stream.on('data', (data) => {
-            console.log('[Docker]', data.toString());
-          });
-        });
-      });
-
-      conn.on('error', (err) => {
-        reject(err);
-      });
-
-      conn.connect(this.sshConfig);
-    });
-  }
-
-  /**
-   * 🆕 Удалить временный файл
-   */
-  async cleanupTempFile(filename) {
-    return new Promise((resolve, reject) => {
-      const conn = new Client();
-      
-      conn.on('ready', () => {
-        const cmd = `rm -f ${this.tempDir}/${filename}`;
-        
-        conn.exec(cmd, (err, stream) => {
-          if (err) {
-            conn.end();
-            return reject(err);
-          }
-          
-          stream.on('close', () => {
-            console.log('[Cleanup] ✅ Временный файл удален');
-            conn.end();
-            resolve();
-          });
-        });
-      });
-
-      conn.on('error', (err) => {
-        reject(err);
-      });
-
-      conn.connect(this.sshConfig);
-    });
-  }
-
-  /**
-   * Загрузить файл на хост через SCP
-   */
-  async uploadFileViaSCP(localPath, remotePath) {
-    return new Promise((resolve, reject) => {
-      const conn = new Client();
-      
-      conn.on('ready', () => {
-        console.log('[SCP] SSH соединение установлено');
-        
-        // Сначала создаем папку
-        const dir = path.dirname(remotePath);
-        conn.exec(`mkdir -p ${dir}`, (err, stream) => {
-          if (err) {
-            conn.end();
-            return reject(err);
-          }
-          
-          stream.on('close', () => {
-            // Теперь загружаем файл
+            // Шаг 2: Загружаем файл на хост через SFTP
+            console.log('[SFTP] Начинаю загрузку файла...');
+            
             conn.sftp((err, sftp) => {
               if (err) {
+                console.error('[SFTP] ❌ Ошибка sftp:', err.message);
                 conn.end();
                 return reject(err);
               }
 
               const fs = require('fs');
               const readStream = fs.createReadStream(localPath);
-              const writeStream = sftp.createWriteStream(remotePath);
+              const writeStream = sftp.createWriteStream(tempPath);
 
               writeStream.on('close', () => {
-                console.log('[SCP] ✅ Файл загружен на хост');
-                sftp.end();
-                conn.end();
-                resolve();
+                console.log('[SFTP] ✅ Файл загружен на хост:', tempPath);
+                
+                // Шаг 3: Создаем папку в контейнере
+                const mkdirContainerCmd = `docker exec cs2-docker mkdir -p ${this.containerPath}`;
+                
+                console.log('[Docker] Создаю папку в контейнере...');
+                
+                conn.exec(mkdirContainerCmd, (err, stream2) => {
+                  if (err) {
+                    console.error('[Docker] ❌ Ошибка mkdir в контейнере:', err.message);
+                    conn.end();
+                    return reject(err);
+                  }
+
+                  stream2.on('close', (code2) => {
+                    console.log(`[Docker] mkdir в контейнере завершен с кодом: ${code2}`);
+                    
+                    // Шаг 4: Копируем файл в контейнер
+                    const cpCmd = `docker cp ${tempPath} cs2-docker:${this.containerPath}/${filename}`;
+                    
+                    console.log('[Docker] Копирую файл в контейнер...');
+                    console.log('[Docker] Команда:', cpCmd);
+                    
+                    conn.exec(cpCmd, (err, stream3) => {
+                      if (err) {
+                        console.error('[Docker] ❌ Ошибка docker cp:', err.message);
+                        conn.end();
+                        return reject(err);
+                      }
+
+                      let stdout = '';
+                      let stderr = '';
+
+                      stream3.on('data', (data) => {
+                        stdout += data.toString();
+                        console.log('[Docker stdout]', data.toString());
+                      });
+
+                      stream3.stderr.on('data', (data) => {
+                        stderr += data.toString();
+                        console.error('[Docker stderr]', data.toString());
+                      });
+
+                      stream3.on('close', (code3) => {
+                        console.log(`[Docker] cp завершен с кодом: ${code3}`);
+                        
+                        if (code3 !== 0) {
+                          conn.end();
+                          return reject(new Error(`docker cp failed: ${stderr}`));
+                        }
+                        
+                        // Шаг 5: Удаляем временный файл
+                        const rmCmd = `rm -f ${tempPath}`;
+                        
+                        console.log('[Cleanup] Удаляю временный файл...');
+                        
+                        conn.exec(rmCmd, (err, stream4) => {
+                          if (err) {
+                            console.error('[Cleanup] ⚠️ Не удалось удалить временный файл:', err.message);
+                          } else {
+                            stream4.on('close', () => {
+                              console.log('[Cleanup] ✅ Временный файл удален');
+                            });
+                          }
+                          
+                          conn.end();
+                          resolve();
+                        });
+                      });
+                    });
+                  });
+
+                  stream2.on('data', (data) => {
+                    console.log('[Docker mkdir stdout]', data.toString());
+                  });
+
+                  stream2.stderr.on('data', (data) => {
+                    console.error('[Docker mkdir stderr]', data.toString());
+                  });
+                });
               });
 
               writeStream.on('error', (err) => {
+                console.error('[SFTP] ❌ Ошибка записи:', err.message);
+                sftp.end();
+                conn.end();
+                reject(err);
+              });
+
+              readStream.on('error', (err) => {
+                console.error('[SFTP] ❌ Ошибка чтения:', err.message);
                 sftp.end();
                 conn.end();
                 reject(err);
@@ -208,10 +193,19 @@ class MatchConfigService {
               readStream.pipe(writeStream);
             });
           });
+
+          stream.on('data', (data) => {
+            console.log('[SSH mkdir stdout]', data.toString());
+          });
+
+          stream.stderr.on('data', (data) => {
+            console.error('[SSH mkdir stderr]', data.toString());
+          });
         });
       });
 
       conn.on('error', (err) => {
+        console.error('[SSH] ❌ Ошибка подключения:', err.message);
         reject(err);
       });
 
@@ -219,9 +213,6 @@ class MatchConfigService {
     });
   }
 
-  /**
-   * Удалить старый конфиг
-   */
   async deleteMatchConfig(matchId) {
     try {
       const fs = require('fs').promises;
