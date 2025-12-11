@@ -11,7 +11,7 @@ class MatchConfigService {
     };
     
     this.configDir = '/root/cs2-configs'; // Локальная папка для конфигов
-    this.serverConfigDir = '/home/steam/cs2-dedicated/game/csgo/MatchZy'; // На CS2 сервере
+    this.serverConfigDir = '/home/steam/cs2-dedicated/game/csgo/cfg/MatchZy'; // На CS2 сервере
   }
 
   /**
@@ -54,7 +54,7 @@ class MatchConfigService {
     await this.uploadFileViaSCP(localPath, remotePath);
     console.log(`[MatchConfig] Загружен на сервер: ${remotePath}`);
 
-    return `MatchZy/match_${matchId}.json`; // Относительный путь для команды
+    return `cfg/MatchZy/match_${matchId}.json`; // Относительный путь для команды
   }
 
   /**
