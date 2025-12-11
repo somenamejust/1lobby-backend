@@ -69,6 +69,7 @@ class CS2Service {
 
   /**
    * Установить карту и режим
+   * ВАЖНО: Команда map вызывает перезагрузку сервера!
    */
   async setMapAndMode(serverHost, serverPort, rconPassword, mapName, gameType = 0, gameMode = 1) {
     try {
@@ -78,10 +79,52 @@ class CS2Service {
       await this.executeCommand(serverHost, serverPort, rconPassword, `game_type ${gameType}`);
       await this.executeCommand(serverHost, serverPort, rconPassword, `game_mode ${gameMode}`);
       
-      // 🆕 ИСПОЛЬЗУЕМ "map" ВМЕСТО "changelevel"
-      await this.executeCommand(serverHost, serverPort, rconPassword, `map ${mapName}`);
+      // 🆕 ЗАКРЫВАЕМ СТАРОЕ СОЕДИНЕНИЕ ПЕРЕД СМЕНОЙ КАРТЫ!
+      const key = `${serverHost}:${serverPort}`;
+      if (this.connections.has(key)) {
+        try {
+          const oldConn = this.connections.get(key);
+          await oldConn.end();
+          console.log('[CS2 RCON] Закрыли старое соединение перед сменой карты');
+        } catch (err) {
+          console.log('[CS2 RCON] Ошибка закрытия соединения:', err.message);
+        }
+        this.connections.delete(key);
+      }
       
-      console.log(`[CS2] Server configured successfully`);
+      // Отправляем команду смены карты (создаем новое соединение)
+      await this.executeCommand(serverHost, serverPort, rconPassword, `map ${mapName}`);
+      console.log(`[CS2] ⚠️ Команда "map ${mapName}" отправлена. Сервер перезагружается...`);
+      
+      // 🆕 УДАЛЯЕМ СОЕДИНЕНИЕ - оно больше не валидно!
+      this.connections.delete(key);
+      
+      // 🆕 ЖДЕМ ПЕРЕЗАГРУЗКИ СЕРВЕРА (45 секунд)
+      console.log('[CS2] Ожидание перезагрузки сервера (45 сек)...');
+      await new Promise(resolve => setTimeout(resolve, 45000));
+      
+      // 🆕 ПРОВЕРЯЕМ ДОСТУПНОСТЬ RCON ПОСЛЕ ПЕРЕЗАГРУЗКИ
+      console.log('[CS2] Проверка доступности сервера после перезагрузки...');
+      let serverReady = false;
+      let attempts = 0;
+      
+      while (!serverReady && attempts < 10) {
+        attempts++;
+        try {
+          await this.executeCommand(serverHost, serverPort, rconPassword, 'echo "Server Ready"');
+          serverReady = true;
+          console.log('[CS2] ✅ Сервер готов после перезагрузки!');
+        } catch (err) {
+          console.log(`[CS2] Попытка ${attempts}/10: сервер еще загружается...`);
+          await new Promise(resolve => setTimeout(resolve, 3000));
+        }
+      }
+      
+      if (!serverReady) {
+        throw new Error('Сервер не ответил после смены карты (таймаут 75+ секунд)');
+      }
+      
+      console.log(`[CS2] ✅ Карта ${mapName} загружена, сервер готов!`);
       
     } catch (error) {
       console.error(`[CS2] Failed to configure server:`, error.message);
@@ -191,32 +234,20 @@ class CS2Service {
       
       const self = this;
       
-      // Ожидание загрузки карты
-      console.log('[CS2] Ожидание загрузки карты (15 сек)...');
-      await new Promise(resolve => setTimeout(resolve, 15000));
+      // 🆕 УБРАЛИ ОЖИДАНИЕ - карта уже загружена в setMapAndMode!
+      // console.log('[CS2] Ожидание загрузки карты (15 сек)...');
+      // await new Promise(resolve => setTimeout(resolve, 15000));
       
-      // Проверка доступности RCON
-      console.log('[CS2] Проверка доступности RCON...');
-      let rconReady = false;
-      let rconAttempts = 0;
-      
-      while (!rconReady && rconAttempts < 10) {
-        rconAttempts++;
-        try {
-          await self.executeCommand(serverHost, serverPort, rconPassword, 'echo "RCON OK"');
-          rconReady = true;
-          console.log('[CS2] ✅ RCON доступен!');
-        } catch (err) {
-          console.log(`[CS2] RCON попытка ${rconAttempts}/10: ${err.message}`);
-          await new Promise(resolve => setTimeout(resolve, 2000));
-        }
+      // Проверка доступности RCON (для уверенности)
+      console.log('[CS2] Финальная проверка RCON...');
+      try {
+        await self.executeCommand(serverHost, serverPort, rconPassword, 'echo "RCON OK"');
+        console.log('[CS2] ✅ RCON доступен!');
+      } catch (err) {
+        throw new Error(`CS2 сервер не отвечает на RCON: ${err.message}`);
       }
       
-      if (!rconReady) {
-        throw new Error('CS2 сервер не отвечает на RCON после 20+ секунд');
-      }
-      
-      // 🆕 СРАЗУ РАЗМЕЩАЕМ ИГРОКОВ (БЕЗ ОЖИДАНИЯ!)
+      // Размещаем игроков
       console.log('[CS2] Размещаем игроков в команды...');
       
       console.log('[CS2] Добавляем игроков в Team A (T-side)...');
