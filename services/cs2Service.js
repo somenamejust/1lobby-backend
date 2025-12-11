@@ -1,4 +1,5 @@
 const { Rcon } = require('rcon-client');
+const matchConfigService = require('./matchConfigService');
 
 class CS2Service {
   constructor() {
@@ -8,53 +9,46 @@ class CS2Service {
   /**
    * Получить RCON соединение (с кешированием)
    */
-    async getConnection(host, port, password) {
-        const key = `${host}:${port}`;
-        
-        // 🆕 ДИАГНОСТИКА
-        console.log('========================================');
-        console.log('[CS2 RCON] Попытка подключения:');
-        console.log(`  Host: ${host}`);
-        console.log(`  Port: ${port}`);
-        console.log(`  Password: ${password.substring(0, 3)}***${password.substring(password.length - 3)}`); // Показываем только начало и конец
-        console.log(`  Password Length: ${password.length}`);
-        console.log('========================================');
-        
-        if (this.connections.has(key)) {
-            const conn = this.connections.get(key);
-            if (conn.authenticated) {
-            console.log('[CS2 RCON] ✅ Используем существующее соединение');
-            return conn;
-            } else {
-            console.log('[CS2 RCON] ⚠️ Старое соединение не авторизовано, создаём новое');
-            }
-        }
-        
-        try {
-            console.log('[CS2 RCON] Подключаемся...');
-            const rcon = await Rcon.connect({
-            host,
-            port,
-            password,
-            timeout: 5000
-            });
-            
-            console.log('[CS2 RCON] ✅ Подключение успешно!');
-            this.connections.set(key, rcon);
-            return rcon;
-            
-        } catch (error) {
-            console.error('[CS2 RCON] ❌ ОШИБКА:');
-            console.error(`  Сообщение: ${error.message}`);
-            console.error(`  Код: ${error.code}`);
-            console.error(`  Детали:`, error);
-            throw new Error(`Cannot connect to CS2 server: ${error.message}`);
-        }
+  async getConnection(host, port, password) {
+    const key = `${host}:${port}`;
+    
+    console.log('========================================');
+    console.log('[CS2 RCON] Попытка подключения:');
+    console.log(`  Host: ${host}`);
+    console.log(`  Port: ${port}`);
+    console.log(`  Password: ${password.substring(0, 3)}***${password.substring(password.length - 3)}`);
+    console.log(`  Password Length: ${password.length}`);
+    console.log('========================================');
+    
+    if (this.connections.has(key)) {
+      const conn = this.connections.get(key);
+      if (conn.authenticated) {
+        console.log('[CS2 RCON] ✅ Используем существующее соединение');
+        return conn;
+      } else {
+        console.log('[CS2 RCON] ⚠️ Старое соединение не авторизовано, создаём новое');
+      }
     }
+    
+    try {
+      console.log('[CS2 RCON] Подключаемся...');
+      const rcon = await Rcon.connect({
+        host,
+        port,
+        password,
+        timeout: 5000
+      });
+      
+      console.log('[CS2 RCON] ✅ Подключение успешно!');
+      this.connections.set(key, rcon);
+      return rcon;
+      
+    } catch (error) {
+      console.error('[CS2 RCON] ❌ ОШИБКА:', error.message);
+      throw new Error(`Cannot connect to CS2 server: ${error.message}`);
+    }
+  }
 
-  /**
-   * Выполнить команду на сервере
-   */
   async executeCommand(host, port, password, command) {
     try {
       const rcon = await this.getConnection(host, port, password);
@@ -68,59 +62,56 @@ class CS2Service {
   }
 
   /**
-   * Установить карту и режим
+   * 🆕 ГЛАВНЫЙ МЕТОД: Запустить матч через MatchZy Config
    */
-  async setMapAndMode(serverHost, serverPort, rconPassword, mapName, gameType = 0, gameMode = 1) {
+  async startMatchViaConfig(lobbyId, mapName, teamAPlayers, teamBPlayers, serverHost, serverPort, rconPassword) {
     try {
-      console.log(`[CS2] Setting up: ${mapName}, type=${gameType}, mode=${gameMode}`);
+      console.log('[CS2 Match] Запуск матча через MatchZy config...');
+      console.log(`[CS2 Match] Карта: ${mapName}`);
+      console.log(`[CS2 Match] Team A (${Object.keys(teamAPlayers).length} игроков):`, teamAPlayers);
+      console.log(`[CS2 Match] Team B (${Object.keys(teamBPlayers).length} игроков):`, teamBPlayers);
+
+      // 1. Создаем и загружаем config
+      const configPath = await matchConfigService.createAndUploadMatchConfig({
+        matchId: lobbyId,
+        map: mapName,
+        teamA: teamAPlayers,
+        teamB: teamBPlayers
+      });
+
+      console.log(`[CS2 Match] Config загружен: ${configPath}`);
+
+      // 2. Даем серверу секунду для записи файла
+      await new Promise(resolve => setTimeout(resolve, 1000));
+
+      // 3. Загружаем матч через MatchZy
+      console.log(`[CS2 Match] Отправка команды: matchzy_loadmatch ${configPath}`);
+      await this.executeCommand(serverHost, serverPort, rconPassword, `matchzy_loadmatch ${configPath}`);
+
+      console.log('[CS2 Match] ✅ Команда отправлена! MatchZy загружает матч...');
       
-      // Устанавливаем режим
-      await this.executeCommand(serverHost, serverPort, rconPassword, `game_type ${gameType}`);
-      await this.executeCommand(serverHost, serverPort, rconPassword, `game_mode ${gameMode}`);
-      
-      // 🆕 ИСПОЛЬЗУЕМ "changelevel" ВМЕСТО "map" - НЕ ПЕРЕЗАГРУЖАЕТ СЕРВЕР!
-      console.log(`[CS2] Меняем карту на ${mapName} через changelevel...`);
-      await this.executeCommand(serverHost, serverPort, rconPassword, `changelevel ${mapName}`);
-      
-      // 🆕 ЖДЕМ ЗАГРУЗКИ НОВОЙ КАРТЫ (30 секунд достаточно)
-      console.log('[CS2] Ожидание загрузки карты (30 сек)...');
-      await new Promise(resolve => setTimeout(resolve, 30000));
-      
-      // 🆕 ПРОВЕРЯЕМ ДОСТУПНОСТЬ
-      console.log('[CS2] Проверка доступности сервера...');
-      let serverReady = false;
-      let attempts = 0;
-      
-      while (!serverReady && attempts < 10) {
-        attempts++;
-        try {
-          await this.executeCommand(serverHost, serverPort, rconPassword, 'echo "Server Ready"');
-          serverReady = true;
-          console.log('[CS2] ✅ Сервер готов!');
-        } catch (err) {
-          console.log(`[CS2] Попытка ${attempts}/10: сервер еще загружается...`);
-          await new Promise(resolve => setTimeout(resolve, 3000));
-        }
-      }
-      
-      if (!serverReady) {
-        throw new Error('Сервер не ответил после смены карты (таймаут 60+ секунд)');
-      }
-      
-      console.log(`[CS2] ✅ Карта ${mapName} загружена, сервер готов!`);
-      
+      return {
+        success: true,
+        message: 'Матч загружается через MatchZy'
+      };
+
     } catch (error) {
-      console.error(`[CS2] Failed to configure server:`, error.message);
+      console.error('[CS2 Match] ❌ Ошибка:', error.message);
       throw error;
     }
   }
 
   /**
-   * Кикнуть всех игроков
+   * Очистить сервер перед матчем
    */
-  async kickAll(host, port, password) {
-    console.log(`[CS2] Kicking all players from ${host}:${port}`);
-    await this.executeCommand(host, port, password, 'kickall');
+  async cleanupServer(serverHost, serverPort, rconPassword) {
+    try {
+      console.log('[CS2] Очистка сервера...');
+      await this.executeCommand(serverHost, serverPort, rconPassword, 'kickall');
+      console.log('[CS2] ✅ Сервер очищен');
+    } catch (error) {
+      console.error('[CS2] Ошибка очистки:', error.message);
+    }
   }
 
   /**
@@ -132,7 +123,7 @@ class CS2Service {
   }
 
   /**
-   * Парсинг вывода команды status
+   * Парсинг вывода status
    */
   parseStatus(output) {
     const lines = output.split('\n');
@@ -145,17 +136,14 @@ class CS2Service {
     };
 
     for (const line of lines) {
-      // hostname: 1Lobby CS2 Server
       if (line.includes('hostname:')) {
         status.hostname = line.split(':')[1]?.trim() || '';
       }
       
-      // map     : de_dust2
       if (line.includes('map') && line.includes(':')) {
         status.map = line.split(':')[1]?.trim() || '';
       }
       
-      // players : 5 / 10
       if (line.includes('players')) {
         const match = line.match(/(\d+)\s*\/\s*(\d+)/);
         if (match) {
@@ -164,8 +152,6 @@ class CS2Service {
         }
       }
       
-      // # userid name uniqueid connected ping loss state rate
-      // # 2 "DURAEB" STEAM_1:0:123456 05:23 50 0 active 786432
       if (line.match(/STEAM_\d:\d:\d+/)) {
         const steamMatch = line.match(/STEAM_(\d):(\d):(\d+)/);
         if (steamMatch) {
@@ -182,7 +168,6 @@ class CS2Service {
    * Конвертация STEAM_X:Y:Z в SteamID64
    */
   convertToSteamID64(steamId) {
-    // STEAM_0:1:123456 -> 76561197960265728 + (123456 * 2) + 1
     const match = steamId.match(/STEAM_(\d):(\d):(\d+)/);
     if (!match) return null;
     
@@ -207,62 +192,6 @@ class CS2Service {
     }
     this.connections.clear();
   }
-
-  /**
-   * Создать match config и загрузить через get5
-   */
-  async assignPlayersToTeams(teamAPlayers, teamBPlayers, serverHost, serverPort, rconPassword) {
-    try {
-      console.log('[CS2] Создаем match config для MatchZy...');
-      
-      // Формируем config
-      const matchConfig = {
-        "matchid": `1lobby_${Date.now()}`,
-        "num_maps": 1,
-        "maplist": ["de_dust2"], // Будет текущая карта
-        "skip_veto": true,
-        "players_per_team": Math.max(Object.keys(teamAPlayers).length, Object.keys(teamBPlayers).length),
-        "min_players_to_ready": 0, // Автостарт
-        "team1": {
-          "name": "Team A",
-          "players": Object.entries(teamAPlayers).reduce((acc, [steamId, username]) => {
-            acc[steamId] = username;
-            return acc;
-          }, {})
-        },
-        "team2": {
-          "name": "Team B", 
-          "players": Object.entries(teamBPlayers).reduce((acc, [steamId, username]) => {
-            acc[steamId] = username;
-            return acc;
-          }, {})
-        }
-      };
-      
-      console.log('[CS2] Match Config:', JSON.stringify(matchConfig, null, 2));
-      
-      // 🆕 АЛЬТЕРНАТИВА: Просто логируем команды для ручной проверки
-      // В будущем можно загрузить config через HTTP endpoint MatchZy
-      
-      console.log('[CS2] === КОМАНДЫ ДЛЯ РУЧНОГО РАЗМЕЩЕНИЯ ===');
-      console.log('[CS2] Если игроки не разместятся автоматически, выполните в консоли сервера:');
-      for (const [steamId, username] of Object.entries(teamAPlayers)) {
-        console.log(`[CS2]   matchzy_addplayer ${steamId} team1 "${username}"`);
-      }
-      for (const [steamId, username] of Object.entries(teamBPlayers)) {
-        console.log(`[CS2]   matchzy_addplayer ${steamId} team2 "${username}"`);
-      }
-      console.log('[CS2] ==========================================');
-      
-      console.log('[CS2] ⚠️ Автоматическое размещение пока недоступно.');
-      console.log('[CS2] Игроки должны вручную выбрать команды при подключении.');
-      
-    } catch (error) {
-      console.error('[CS2 Match] ❌ Ошибка:', error.message);
-      throw error;
-    }
-  }
-
 }
 
 module.exports = new CS2Service();
