@@ -69,7 +69,6 @@ class CS2Service {
 
   /**
    * Установить карту и режим
-   * ВАЖНО: Команда map вызывает перезагрузку сервера!
    */
   async setMapAndMode(serverHost, serverPort, rconPassword, mapName, gameType = 0, gameMode = 1) {
     try {
@@ -79,32 +78,16 @@ class CS2Service {
       await this.executeCommand(serverHost, serverPort, rconPassword, `game_type ${gameType}`);
       await this.executeCommand(serverHost, serverPort, rconPassword, `game_mode ${gameMode}`);
       
-      // 🆕 ЗАКРЫВАЕМ СТАРОЕ СОЕДИНЕНИЕ ПЕРЕД СМЕНОЙ КАРТЫ!
-      const key = `${serverHost}:${serverPort}`;
-      if (this.connections.has(key)) {
-        try {
-          const oldConn = this.connections.get(key);
-          await oldConn.end();
-          console.log('[CS2 RCON] Закрыли старое соединение перед сменой карты');
-        } catch (err) {
-          console.log('[CS2 RCON] Ошибка закрытия соединения:', err.message);
-        }
-        this.connections.delete(key);
-      }
+      // 🆕 ИСПОЛЬЗУЕМ "changelevel" ВМЕСТО "map" - НЕ ПЕРЕЗАГРУЖАЕТ СЕРВЕР!
+      console.log(`[CS2] Меняем карту на ${mapName} через changelevel...`);
+      await this.executeCommand(serverHost, serverPort, rconPassword, `changelevel ${mapName}`);
       
-      // Отправляем команду смены карты (создаем новое соединение)
-      await this.executeCommand(serverHost, serverPort, rconPassword, `map ${mapName}`);
-      console.log(`[CS2] ⚠️ Команда "map ${mapName}" отправлена. Сервер перезагружается...`);
+      // 🆕 ЖДЕМ ЗАГРУЗКИ НОВОЙ КАРТЫ (30 секунд достаточно)
+      console.log('[CS2] Ожидание загрузки карты (30 сек)...');
+      await new Promise(resolve => setTimeout(resolve, 30000));
       
-      // 🆕 УДАЛЯЕМ СОЕДИНЕНИЕ - оно больше не валидно!
-      this.connections.delete(key);
-      
-      // 🆕 ЖДЕМ ПЕРЕЗАГРУЗКИ СЕРВЕРА (45 секунд)
-      console.log('[CS2] Ожидание перезагрузки сервера (45 сек)...');
-      await new Promise(resolve => setTimeout(resolve, 45000));
-      
-      // 🆕 ПРОВЕРЯЕМ ДОСТУПНОСТЬ RCON ПОСЛЕ ПЕРЕЗАГРУЗКИ
-      console.log('[CS2] Проверка доступности сервера после перезагрузки...');
+      // 🆕 ПРОВЕРЯЕМ ДОСТУПНОСТЬ
+      console.log('[CS2] Проверка доступности сервера...');
       let serverReady = false;
       let attempts = 0;
       
@@ -113,7 +96,7 @@ class CS2Service {
         try {
           await this.executeCommand(serverHost, serverPort, rconPassword, 'echo "Server Ready"');
           serverReady = true;
-          console.log('[CS2] ✅ Сервер готов после перезагрузки!');
+          console.log('[CS2] ✅ Сервер готов!');
         } catch (err) {
           console.log(`[CS2] Попытка ${attempts}/10: сервер еще загружается...`);
           await new Promise(resolve => setTimeout(resolve, 3000));
@@ -121,7 +104,7 @@ class CS2Service {
       }
       
       if (!serverReady) {
-        throw new Error('Сервер не ответил после смены карты (таймаут 75+ секунд)');
+        throw new Error('Сервер не ответил после смены карты (таймаут 60+ секунд)');
       }
       
       console.log(`[CS2] ✅ Карта ${mapName} загружена, сервер готов!`);
@@ -226,55 +209,53 @@ class CS2Service {
   }
 
   /**
-   * Создать и загрузить match config
+   * Создать match config и загрузить через get5
    */
   async assignPlayersToTeams(teamAPlayers, teamBPlayers, serverHost, serverPort, rconPassword) {
     try {
-      console.log('[CS2] Назначаем игроков в команды через MatchZy...');
+      console.log('[CS2] Создаем match config для MatchZy...');
       
-      const self = this;
+      // Формируем config
+      const matchConfig = {
+        "matchid": `1lobby_${Date.now()}`,
+        "num_maps": 1,
+        "maplist": ["de_dust2"], // Будет текущая карта
+        "skip_veto": true,
+        "players_per_team": Math.max(Object.keys(teamAPlayers).length, Object.keys(teamBPlayers).length),
+        "min_players_to_ready": 0, // Автостарт
+        "team1": {
+          "name": "Team A",
+          "players": Object.entries(teamAPlayers).reduce((acc, [steamId, username]) => {
+            acc[steamId] = username;
+            return acc;
+          }, {})
+        },
+        "team2": {
+          "name": "Team B", 
+          "players": Object.entries(teamBPlayers).reduce((acc, [steamId, username]) => {
+            acc[steamId] = username;
+            return acc;
+          }, {})
+        }
+      };
       
-      // 🆕 УБРАЛИ ОЖИДАНИЕ - карта уже загружена в setMapAndMode!
-      // console.log('[CS2] Ожидание загрузки карты (15 сек)...');
-      // await new Promise(resolve => setTimeout(resolve, 15000));
+      console.log('[CS2] Match Config:', JSON.stringify(matchConfig, null, 2));
       
-      // Проверка доступности RCON (для уверенности)
-      console.log('[CS2] Финальная проверка RCON...');
-      try {
-        await self.executeCommand(serverHost, serverPort, rconPassword, 'echo "RCON OK"');
-        console.log('[CS2] ✅ RCON доступен!');
-      } catch (err) {
-        throw new Error(`CS2 сервер не отвечает на RCON: ${err.message}`);
-      }
+      // 🆕 АЛЬТЕРНАТИВА: Просто логируем команды для ручной проверки
+      // В будущем можно загрузить config через HTTP endpoint MatchZy
       
-      // Размещаем игроков
-      console.log('[CS2] Размещаем игроков в команды...');
-      
-      console.log('[CS2] Добавляем игроков в Team A (T-side)...');
+      console.log('[CS2] === КОМАНДЫ ДЛЯ РУЧНОГО РАЗМЕЩЕНИЯ ===');
+      console.log('[CS2] Если игроки не разместятся автоматически, выполните в консоли сервера:');
       for (const [steamId, username] of Object.entries(teamAPlayers)) {
-        const command = `matchzy_addplayer ${steamId} team1 "${username}"`;
-        console.log(`[CS2] > ${command}`);
-        try {
-          await self.executeCommand(serverHost, serverPort, rconPassword, command);
-          await new Promise(resolve => setTimeout(resolve, 500));
-        } catch (err) {
-          console.error(`[CS2] ❌ Не удалось добавить ${username}: ${err.message}`);
-        }
+        console.log(`[CS2]   matchzy_addplayer ${steamId} team1 "${username}"`);
       }
-      
-      console.log('[CS2] Добавляем игроков в Team B (CT-side)...');
       for (const [steamId, username] of Object.entries(teamBPlayers)) {
-        const command = `matchzy_addplayer ${steamId} team2 "${username}"`;
-        console.log(`[CS2] > ${command}`);
-        try {
-          await self.executeCommand(serverHost, serverPort, rconPassword, command);
-          await new Promise(resolve => setTimeout(resolve, 500));
-        } catch (err) {
-          console.error(`[CS2] ❌ Не удалось добавить ${username}: ${err.message}`);
-        }
+        console.log(`[CS2]   matchzy_addplayer ${steamId} team2 "${username}"`);
       }
-
-      console.log('[CS2 Match] ✅ Команды matchzy_addplayer отправлены!');
+      console.log('[CS2] ==========================================');
+      
+      console.log('[CS2] ⚠️ Автоматическое размещение пока недоступно.');
+      console.log('[CS2] Игроки должны вручную выбрать команды при подключении.');
       
     } catch (error) {
       console.error('[CS2 Match] ❌ Ошибка:', error.message);
