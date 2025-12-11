@@ -19,7 +19,7 @@ class MatchConfigService {
     const { matchId, map, teamA, teamB } = matchData;
     
     const config = {
-      "matchid": `1lobby_${matchId}`,
+      "matchid": matchId,
       "num_maps": 1,
       "maplist": [map],
       "skip_veto": true,
