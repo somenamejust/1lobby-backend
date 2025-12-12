@@ -432,7 +432,7 @@ function getCS2MapForMode(lobby) {
   
   // 2. Иначе выбираем по режиму (на случай старых лобби без map)
   const modeToMap = {
-    '1v1': 'de_mirage',
+    '1v1': 'de_dust2',
     '2v2': 'de_inferno',
     '3v3': 'de_mirage',
     '5v5': 'de_dust2',
