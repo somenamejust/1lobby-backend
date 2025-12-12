@@ -594,9 +594,6 @@ router.put('/:id/start', async (req, res) => {
           assignedServer.port,
           assignedServer.rconPassword
         );
-
-        console.log('[CS2] ⏱️ Ожидание 5 сек перед загрузкой config...');
-        await new Promise(resolve => setTimeout(resolve, 5000));
         
         // 5. Собираем игроков по командам
         console.log('[CS2] Сбор данных игроков...');
