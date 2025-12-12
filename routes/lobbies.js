@@ -439,7 +439,7 @@ function getCS2MapForMode(lobby) {
     'Free-for-all': 'de_dust2'
   };
   
-  const fallbackMap = modeToMap[lobby.mode] || 'de_mirage';
+  const fallbackMap = modeToMap[lobby.mode] || 'de_dust2';
   console.log(`[CS2] Карта по режиму ${lobby.mode}: ${fallbackMap}`);
   return fallbackMap;
 }
