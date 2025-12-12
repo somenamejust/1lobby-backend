@@ -27,6 +27,7 @@ class CS2Service {
         return conn;
       } else {
         console.log('[CS2 RCON] ⚠️ Старое соединение не авторизовано, создаём новое');
+        this.connections.delete(key);
       }
     }
     
@@ -36,7 +37,7 @@ class CS2Service {
         host,
         port,
         password,
-        timeout: 5000
+        timeout: 10000 // Увеличили до 10 секунд
       });
       
       console.log('[CS2 RCON] ✅ Подключение успешно!');
@@ -51,12 +52,31 @@ class CS2Service {
 
   async executeCommand(host, port, password, command) {
     try {
+      console.log(`[CS2] Отправка команды: ${command}`);
+      
       const rcon = await this.getConnection(host, port, password);
+      
+      // 🆕 ПРОВЕРКА СОЕДИНЕНИЯ
+      if (!rcon || !rcon.authenticated) {
+        console.error('[CS2 RCON] ❌ Соединение потеряно! Переподключаемся...');
+        const key = `${host}:${port}`;
+        this.connections.delete(key);
+        
+        const newRcon = await this.getConnection(host, port, password);
+        const response = await newRcon.send(command);
+        console.log(`[CS2] ${host}:${port} > ${command}`);
+        console.log(`[CS2] Response:`, response || '(empty response)');
+        return response;
+      }
+      
       const response = await rcon.send(command);
       console.log(`[CS2] ${host}:${port} > ${command}`);
+      console.log(`[CS2] Response:`, response || '(empty response)');
+      
       return response;
+      
     } catch (error) {
-      console.error(`[CS2] Command failed: ${command}`, error);
+      console.error(`[CS2] ❌ Ошибка выполнения команды "${command}":`, error.message);
       throw error;
     }
   }
@@ -81,14 +101,29 @@ class CS2Service {
 
       console.log(`[CS2 Match] Config загружен: ${configPath}`);
 
-      // 2. Даем серверу секунду для записи файла
-      await new Promise(resolve => setTimeout(resolve, 1000));
+      // 🆕 2. ЗАКРЫВАЕМ СТАРОЕ RCON СОЕДИНЕНИЕ
+      const rconKey = `${serverHost}:${serverPort}`;
+      if (this.connections.has(rconKey)) {
+        const oldRcon = this.connections.get(rconKey);
+        try {
+          await oldRcon.end();
+          console.log('[CS2 RCON] 🔄 Старое соединение закрыто');
+        } catch (e) {
+          console.log('[CS2 RCON] ⚠️ Ошибка закрытия старого соединения:', e.message);
+        }
+        this.connections.delete(rconKey);
+      }
 
-      // 3. Загружаем матч через MatchZy
+      // 🆕 3. ПАУЗА 3 СЕКУНДЫ перед отправкой команды
+      console.log('[CS2] ⏱️ Ожидание 3 сек перед загрузкой config...');
+      await new Promise(resolve => setTimeout(resolve, 3000));
+
+      // 4. Загружаем матч через MatchZy
       console.log(`[CS2 Match] Отправка команды: matchzy_loadmatch ${configPath}`);
-      await this.executeCommand(serverHost, serverPort, rconPassword, `matchzy_loadmatch ${configPath}`);
+      const response = await this.executeCommand(serverHost, serverPort, rconPassword, `matchzy_loadmatch ${configPath}`);
 
       console.log('[CS2 Match] ✅ Команда отправлена! MatchZy загружает матч...');
+      console.log('[CS2 Match] Ответ сервера:', response);
       
       return {
         success: true,
@@ -109,6 +144,11 @@ class CS2Service {
       console.log('[CS2] Очистка сервера...');
       await this.executeCommand(serverHost, serverPort, rconPassword, 'kickall');
       console.log('[CS2] ✅ Сервер очищен');
+      
+      // 🆕 ПАУЗА 2 СЕКУНДЫ после kickall
+      console.log('[CS2] ⏱️ Ожидание 2 сек после очистки...');
+      await new Promise(resolve => setTimeout(resolve, 2000));
+      
     } catch (error) {
       console.error('[CS2] Ошибка очистки:', error.message);
     }
