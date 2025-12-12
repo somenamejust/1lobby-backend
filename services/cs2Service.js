@@ -141,16 +141,14 @@ class CS2Service {
    */
   async cleanupServer(serverHost, serverPort, rconPassword) {
     try {
-      console.log('[CS2] Очистка сервера...');
-      await this.executeCommand(serverHost, serverPort, rconPassword, 'kickall');
-      console.log('[CS2] ✅ Сервер очищен');
+      console.log('[CS2] Сервер готов к запуску матча');
       
-      // 🆕 ПАУЗА 2 СЕКУНДЫ после kickall
-      console.log('[CS2] ⏱️ Ожидание 2 сек после очистки...');
+      // 🆕 Просто пауза 2 секунды
+      console.log('[CS2] ⏱️ Ожидание 2 сек...');
       await new Promise(resolve => setTimeout(resolve, 2000));
       
     } catch (error) {
-      console.error('[CS2] Ошибка очистки:', error.message);
+      console.error('[CS2] Ошибка:', error.message);
     }
   }
 

@@ -12,7 +12,7 @@ class MatchConfigService {
     
     this.configDir = '/root/cs2-configs';
     this.tempDir = '/tmp/matchzy-configs';
-    this.containerPath = '/home/steam/cs2-dedicated/game/csgo/cfg';
+    this.containerPath = '/home/steam/cs2-dedicated/game/csgo/cfg/MatchZy';
   }
 
   async createAndUploadMatchConfig(matchData) {
@@ -50,11 +50,11 @@ class MatchConfigService {
 
     console.log(`[MatchConfig] ✅ Файл загружен в контейнер`);
 
-    return filename;
+    return `MatchZy/${filename}`;
   }
 
   /**
-   * 🆕 НОВЫЙ МЕТОД: Загрузка НАПРЯМУЮ в контейнер
+   * 🆕 Загрузка НАПРЯМУЮ в контейнер
    */
   async uploadToContainer(localPath, filename) {
     return new Promise((resolve, reject) => {
