@@ -147,7 +147,7 @@ class MatchConfigService {
                         
                         // 🆕 ШАГ 5: МЕНЯЕМ OWNERSHIP
                         const containerFilePath = `${this.containerPath}/${filename}`;
-                        const chownCmd = `docker exec cs2-docker chown steam:steam ${containerFilePath}`;
+                        const chownCmd = `docker exec -u root cs2-docker chown steam:steam ${containerFilePath}`;
                         
                         console.log('[Docker] Меняю ownership на steam:steam...');
                         
