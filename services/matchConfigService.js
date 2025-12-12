@@ -145,22 +145,46 @@ class MatchConfigService {
                           return reject(new Error(`docker cp failed: ${stderr}`));
                         }
                         
-                        // Шаг 5: Удаляем временный файл
-                        const rmCmd = `rm -f ${tempPath}`;
+                        // 🆕 ШАГ 5: МЕНЯЕМ OWNERSHIP
+                        const containerFilePath = `${this.containerPath}/${filename}`;
+                        const chownCmd = `docker exec cs2-docker chown steam:steam ${containerFilePath}`;
                         
-                        console.log('[Cleanup] Удаляю временный файл...');
+                        console.log('[Docker] Меняю ownership на steam:steam...');
                         
-                        conn.exec(rmCmd, (err, stream4) => {
+                        conn.exec(chownCmd, (err, stream4) => {
                           if (err) {
-                            console.error('[Cleanup] ⚠️ Не удалось удалить временный файл:', err.message);
-                          } else {
-                            stream4.on('close', () => {
-                              console.log('[Cleanup] ✅ Временный файл удален');
-                            });
+                            console.error('[Docker] ⚠️ Ошибка chown:', err.message);
                           }
-                          
-                          conn.end();
-                          resolve();
+
+                          stream4.on('close', (code4) => {
+                            console.log(`[Docker] chown завершен с кодом: ${code4}`);
+                            
+                            // ШАГ 6: УДАЛЯЕМ ВРЕМЕННЫЙ ФАЙЛ
+                            const rmCmd = `rm -f ${tempPath}`;
+                            
+                            console.log('[Cleanup] Удаляю временный файл...');
+                            
+                            conn.exec(rmCmd, (err, stream5) => {
+                              if (err) {
+                                console.error('[Cleanup] ⚠️ Не удалось удалить временный файл:', err.message);
+                              } else {
+                                stream5.on('close', () => {
+                                  console.log('[Cleanup] ✅ Временный файл удален');
+                                });
+                              }
+                              
+                              conn.end();
+                              resolve();
+                            });
+                          });
+
+                          stream4.on('data', (data) => {
+                            console.log('[Docker chown stdout]', data.toString());
+                          });
+
+                          stream4.stderr.on('data', (data) => {
+                            console.error('[Docker chown stderr]', data.toString());
+                          });
                         });
                       });
                     });
