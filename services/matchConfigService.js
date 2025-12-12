@@ -50,7 +50,7 @@ class MatchConfigService {
 
     console.log(`[MatchConfig] ✅ Файл загружен в контейнер`);
 
-    return `cfg/MatchZy/${filename}`;
+    return `MatchZy/${filename}`;
   }
 
   /**
