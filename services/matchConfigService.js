@@ -17,9 +17,14 @@ class MatchConfigService {
 
   async createAndUploadMatchConfig(matchData) {
     const { matchId, map, teamA, teamB } = matchData;
+
+    // 🆕 ИСПРАВЛЕНИЕ: Уменьшаем matchId до размера int32
+    const safeMatchId = Math.floor(matchId / 1000); // Убираем миллисекунды
+    console.log(`[MatchConfig] Исходный matchId: ${matchId}`);
+    console.log(`[MatchConfig] Безопасный matchId: ${safeMatchId}`);
     
     const config = {
-      "matchid": matchId,
+      "matchid": safeMatchId,
       "num_maps": 1,
       "maplist": [map],
       "skip_veto": true,
