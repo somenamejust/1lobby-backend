@@ -120,7 +120,7 @@ class CS2Service {
 
       // 4. Загружаем матч через MatchZy
       console.log(`[CS2 Match] Отправка команды: matchzy_loadmatch ${configPath}`);
-      const response = await this.executeCommand(serverHost, serverPort, rconPassword, `matchzy_loadmatch cfg/MatchZy/${configPath.replace('MatchZy/', '').replace('matchzy/', '')}`);
+      const response = await this.executeCommand(serverHost, serverPort, rconPassword, `matchzy_loadmatch cfg/MatchZy/${configPath}`);
 
       console.log('[CS2 Match] ✅ Команда отправлена! MatchZy загружает матч...');
       console.log('[CS2 Match] Ответ сервера:', response);
