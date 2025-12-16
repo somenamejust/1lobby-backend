@@ -87,23 +87,12 @@ class CS2Service {
    */
   async startMatchViaConfig(lobbyId, map, teamA, teamB) {
     try {
-      // 🆕 ПРАВИЛЬНО: Используем импортированный модуль
       const server = cs2ServerPool.getServerByLobby(lobbyId);
       if (!server) {
         throw new Error('Server not assigned to this lobby');
       }
       
-      console.log(`[CS2 Match] Используется сервер: ${server.id} (${server.host}:${server.port})`);
-      
-      // ШАГ 1: Меняем карту
-      console.log(`[CS2] Смена карты на ${map}...`);
-      await this.executeCommand(server.host, server.port, server.rconPassword, `changelevel ${map}`);
-      
-      // ШАГ 2: Ждем загрузки карты 
-      console.log('[CS2] ⏱️ Ожидание загрузки карты (20 сек)...');
-      await new Promise(resolve => setTimeout(resolve, 20000));
-      
-      // ШАГ 3: Создаем конфиг БЕЗ maplist
+      // ШАГ 1: Создаем конфиг С maplist (MatchZy сам сменит карту)
       const configPath = await matchConfigService.createAndUploadMatchConfig({
         matchId: lobbyId,
         map: map,
@@ -113,11 +102,11 @@ class CS2Service {
       
       console.log(`[CS2 Match] Config загружен: ${configPath}`);
       
-      // ШАГ 4: Ждем перед загрузкой конфига
+      // ШАГ 2: Ждем перед загрузкой конфига
       console.log('[CS2] ⏱️ Ожидание 2 сек перед загрузкой config...');
       await new Promise(resolve => setTimeout(resolve, 2000));
       
-      // ШАГ 5: Загружаем конфиг
+      // ШАГ 3: Загружаем конфиг (MatchZy автоматически сменит карту и распределит игроков)
       console.log(`[CS2 Match] Отправка команды: matchzy_loadmatch cfg/MatchZy/${configPath}`);
       await this.executeCommand(
         server.host,
