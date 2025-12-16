@@ -100,8 +100,8 @@ class CS2Service {
       await this.executeCommand(server.host, server.port, server.rconPassword, `changelevel ${map}`);
       
       // ШАГ 2: Ждем загрузки карты 
-      console.log('[CS2] ⏱️ Ожидание загрузки карты (10 сек)...');
-      await new Promise(resolve => setTimeout(resolve, 10000));
+      console.log('[CS2] ⏱️ Ожидание загрузки карты (20 сек)...');
+      await new Promise(resolve => setTimeout(resolve, 20000));
       
       // ШАГ 3: Создаем конфиг БЕЗ maplist
       const configPath = await matchConfigService.createAndUploadMatchConfig({
