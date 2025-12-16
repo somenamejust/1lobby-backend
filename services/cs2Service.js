@@ -82,54 +82,52 @@ class CS2Service {
   }
 
   /**
-   * 🆕 ГЛАВНЫЙ МЕТОД: Запустить матч через MatchZy Config
+   * Запустить матч через MatchZy Config
    */
-  async startMatchViaConfig(lobbyId, mapName, teamAPlayers, teamBPlayers, serverHost, serverPort, rconPassword) {
+  async startMatchViaConfig(lobbyId, map, teamA, teamB) {
     try {
-      console.log('[CS2 Match] Запуск матча через MatchZy config...');
-      console.log(`[CS2 Match] Карта: ${mapName}`);
-      console.log(`[CS2 Match] Team A (${Object.keys(teamAPlayers).length} игроков):`, teamAPlayers);
-      console.log(`[CS2 Match] Team B (${Object.keys(teamBPlayers).length} игроков):`, teamBPlayers);
-
-      // 1. Создаем и загружаем config
+      const server = this.getServer(lobbyId);
+      
+      // 🆕 ШАГ 1: СНАЧАЛА меняем карту
+      console.log(`[CS2] Смена карты на ${map}...`);
+      await this.executeCommand(server.host, server.port, server.rconPassword, `changelevel ${map}`);
+      
+      // 🆕 ШАГ 2: Ждем завершения смены карты (30 секунд)
+      console.log('[CS2] ⏱️ Ожидание загрузки карты (30 сек)...');
+      await new Promise(resolve => setTimeout(resolve, 30000));
+      
+      // 🆕 ШАГ 3: Создаем конфиг БЕЗ maplist
+      const matchConfigService = require('./matchConfigService');
       const configPath = await matchConfigService.createAndUploadMatchConfig({
         matchId: lobbyId,
-        map: mapName,
-        teamA: teamAPlayers,
-        teamB: teamBPlayers
+        map: map, // Передаем, но НЕ используем в maplist
+        teamA: teamA,
+        teamB: teamB
       });
-
+      
       console.log(`[CS2 Match] Config загружен: ${configPath}`);
-
-      // 🆕 2. ЗАКРЫВАЕМ СТАРОЕ RCON СОЕДИНЕНИЕ
-      const rconKey = `${serverHost}:${serverPort}`;
-      if (this.connections.has(rconKey)) {
-        const oldRcon = this.connections.get(rconKey);
-        try {
-          await oldRcon.end();
-          console.log('[CS2 RCON] 🔄 Старое соединение закрыто');
-        } catch (e) {
-          console.log('[CS2 RCON] ⚠️ Ошибка закрытия старого соединения:', e.message);
-        }
-        this.connections.delete(rconKey);
-      }
-
-      // 🆕 3. ПАУЗА 3 СЕКУНДЫ перед отправкой команды
+      
+      // ШАГ 4: Ждем перед загрузкой конфига
       console.log('[CS2] ⏱️ Ожидание 3 сек перед загрузкой config...');
       await new Promise(resolve => setTimeout(resolve, 3000));
-
-      // 4. Загружаем матч через MatchZy
+      
+      // ШАГ 5: Загружаем конфиг
       console.log(`[CS2 Match] Отправка команды: matchzy_loadmatch ${configPath}`);
-      const response = await this.executeCommand(serverHost, serverPort, rconPassword, `matchzy_loadmatch cfg/MatchZy/${configPath}`);
-
+      await this.executeCommand(
+        server.host,
+        server.port,
+        server.rconPassword,
+        `matchzy_loadmatch cfg/MatchZy/${configPath}`
+      );
+      
       console.log('[CS2 Match] ✅ Команда отправлена! MatchZy загружает матч...');
-      console.log('[CS2 Match] Ответ сервера:', response);
       
       return {
         success: true,
-        message: 'Матч загружается через MatchZy'
+        message: `Матч запущен на ${map}`,
+        server: server
       };
-
+      
     } catch (error) {
       console.error('[CS2 Match] ❌ Ошибка:', error.message);
       throw error;
