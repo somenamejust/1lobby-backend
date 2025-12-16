@@ -86,37 +86,43 @@ class CS2Service {
    */
   async startMatchViaConfig(lobbyId, map, teamA, teamB) {
     try {
-      const server = this.getServer(lobbyId);
+      const assignment = this.serverPool.get(lobbyId);
+      if (!assignment) {
+        throw new Error('Server not assigned to this lobby');
+      }
       
-      // 🆕 ШАГ 1: СНАЧАЛА меняем карту
+      const { serverId, host, port, rconPassword } = assignment;
+      console.log(`[CS2 Match] Используется сервер: ${serverId} (${host}:${port})`);
+      
+      // ШАГ 1: Меняем карту
       console.log(`[CS2] Смена карты на ${map}...`);
-      await this.executeCommand(server.host, server.port, server.rconPassword, `changelevel ${map}`);
+      await this.executeCommand(host, port, rconPassword, `changelevel ${map}`);
       
-      // 🆕 ШАГ 2: Ждем завершения смены карты (30 секунд)
-      console.log('[CS2] ⏱️ Ожидание загрузки карты (30 сек)...');
-      await new Promise(resolve => setTimeout(resolve, 30000));
+      // ШАГ 2: Ждем загрузки карты 
+      console.log('[CS2] ⏱️ Ожидание загрузки карты (10 сек)...');
+      await new Promise(resolve => setTimeout(resolve, 10000)); // ⬅️ ИЗМЕНИЛИ
       
-      // 🆕 ШАГ 3: Создаем конфиг БЕЗ maplist
+      // ШАГ 3: Создаем конфиг БЕЗ maplist
       const matchConfigService = require('./matchConfigService');
       const configPath = await matchConfigService.createAndUploadMatchConfig({
         matchId: lobbyId,
-        map: map, // Передаем, но НЕ используем в maplist
+        map: map,
         teamA: teamA,
         teamB: teamB
       });
       
       console.log(`[CS2 Match] Config загружен: ${configPath}`);
       
-      // ШАГ 4: Ждем перед загрузкой конфига
-      console.log('[CS2] ⏱️ Ожидание 3 сек перед загрузкой config...');
-      await new Promise(resolve => setTimeout(resolve, 3000));
+      // ШАГ 4: Ждем перед загрузкой конфига (тоже можно уменьшить до 2 сек)
+      console.log('[CS2] ⏱️ Ожидание 2 сек перед загрузкой config...');
+      await new Promise(resolve => setTimeout(resolve, 2000)); // ⬅️ ИЗМЕНИЛИ
       
       // ШАГ 5: Загружаем конфиг
-      console.log(`[CS2 Match] Отправка команды: matchzy_loadmatch ${configPath}`);
+      console.log(`[CS2 Match] Отправка команды: matchzy_loadmatch cfg/MatchZy/${configPath}`);
       await this.executeCommand(
-        server.host,
-        server.port,
-        server.rconPassword,
+        host,
+        port,
+        rconPassword,
         `matchzy_loadmatch cfg/MatchZy/${configPath}`
       );
       
@@ -125,7 +131,7 @@ class CS2Service {
       return {
         success: true,
         message: `Матч запущен на ${map}`,
-        server: server
+        connectString: `connect ${host}:${port}`
       };
       
     } catch (error) {
