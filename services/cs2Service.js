@@ -92,30 +92,29 @@ class CS2Service {
         throw new Error('Server not assigned to this lobby');
       }
       
-      // ШАГ 1: Меняем карту ПЕРЕД загрузкой конфига
-      console.log(`[CS2] Смена карты на ${map}...`);
-      await this.executeCommand(
-        server.host,
-        server.port,
-        server.rconPassword,
-        `map ${map}` // ⬅️ НЕ changelevel! Просто map
-      );
+      // ❌ УБИРАЕМ ВЕСЬ БЛОК СМЕНЫ КАРТЫ!
+      // console.log(`[CS2] Смена карты на ${map}...`);
+      // await this.executeCommand(...);
+      // await new Promise(resolve => setTimeout(resolve, 30000));
       
-      // ШАГ 2: Ждем загрузки карты
-      console.log('[CS2] ⏱️ Ожидание загрузки карты (30 сек)...');
-      await new Promise(resolve => setTimeout(resolve, 30000));
+      // ⚠️ ВАЖНО: Игнорируем параметр map, всегда используем de_dust2
+      console.log(`[CS2] ⚠️ Запуск матча на текущей карте (de_dust2), запрошенная карта ${map} игнорируется`);
       
-      // ШАГ 3: Создаем конфиг БЕЗ maplist
+      // Создаем конфиг С maplist = ["de_dust2"]
       const configPath = await matchConfigService.createAndUploadMatchConfig({
         matchId: lobbyId,
-        map: map,
+        map: "de_dust2", // ⬅️ ВСЕГДА de_dust2!
         teamA: teamA,
         teamB: teamB
       });
       
       console.log(`[CS2 Match] Config загружен: ${configPath}`);
       
-      // ШАГ 4: Загружаем конфиг
+      // Ждем немного
+      console.log('[CS2] ⏱️ Ожидание 2 сек перед загрузкой config...');
+      await new Promise(resolve => setTimeout(resolve, 2000));
+      
+      // Загружаем конфиг
       console.log(`[CS2 Match] Отправка команды: matchzy_loadmatch cfg/MatchZy/${configPath}`);
       await this.executeCommand(
         server.host,
@@ -128,7 +127,7 @@ class CS2Service {
       
       return {
         success: true,
-        message: `Матч запущен на ${map}`,
+        message: `Матч запущен на de_dust2`,
         connectString: `connect ${server.host}:${server.port}`
       };
       
