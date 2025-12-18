@@ -92,7 +92,20 @@ class CS2Service {
         throw new Error('Server not assigned to this lobby');
       }
       
-      // ШАГ 1: Создаем конфиг С maplist (MatchZy сам сменит карту)
+      // ШАГ 1: Меняем карту ПЕРЕД загрузкой конфига
+      console.log(`[CS2] Смена карты на ${map}...`);
+      await this.executeCommand(
+        server.host,
+        server.port,
+        server.rconPassword,
+        `map ${map}` // ⬅️ НЕ changelevel! Просто map
+      );
+      
+      // ШАГ 2: Ждем загрузки карты
+      console.log('[CS2] ⏱️ Ожидание загрузки карты (30 сек)...');
+      await new Promise(resolve => setTimeout(resolve, 30000));
+      
+      // ШАГ 3: Создаем конфиг БЕЗ maplist
       const configPath = await matchConfigService.createAndUploadMatchConfig({
         matchId: lobbyId,
         map: map,
@@ -102,11 +115,7 @@ class CS2Service {
       
       console.log(`[CS2 Match] Config загружен: ${configPath}`);
       
-      // ШАГ 2: Ждем перед загрузкой конфига
-      console.log('[CS2] ⏱️ Ожидание 2 сек перед загрузкой config...');
-      await new Promise(resolve => setTimeout(resolve, 2000));
-      
-      // ШАГ 3: Загружаем конфиг (MatchZy автоматически сменит карту и распределит игроков)
+      // ШАГ 4: Загружаем конфиг
       console.log(`[CS2 Match] Отправка команды: matchzy_loadmatch cfg/MatchZy/${configPath}`);
       await this.executeCommand(
         server.host,
