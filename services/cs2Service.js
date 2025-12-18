@@ -92,28 +92,29 @@ class CS2Service {
         throw new Error('Server not assigned to this lobby');
       }
       
-      // ❌ НЕ МЕНЯЕМ КАРТУ ЧЕРЕЗ RCON!
-      console.log(`[CS2] Загрузка матча на карте: ${map}`);
-      console.log('[CS2] ⚠️ Смена карты будет выполнена через MatchZy после загрузки конфига');
+      // ⚠️ ВРЕМЕННО: игнорируем выбранную карту
+      if (map !== 'de_dust2') {
+        console.log(`[CS2] ⚠️ ВРЕМЕННО: Карта ${map} недоступна, используем de_dust2`);
+      }
       
-      // Создаем конфиг с правильной картой
+      // Создаем конфиг ТОЛЬКО для de_dust2
       const configPath = await matchConfigService.createAndUploadMatchConfig({
         matchId: lobbyId,
-        map: map, // ⬅️ Передаем ПРАВИЛЬНУЮ карту!
+        map: "de_dust2",
         teamA: teamA,
         teamB: teamB
       });
       
-      console.log(`[CS2 Match] Config загружен: ${configPath}`);
-      console.log(`[CS2 Match] Карта в конфиге: ${map}`);
-      console.log(`[CS2 Match] Ожидается ${Object.keys(teamA).length + Object.keys(teamB).length} игроков`);
+      console.log(`[CS2 Match] Config создан: ${configPath}`);
+      console.log(`[CS2 Match] Игроков Team A: ${Object.keys(teamA).length}`);
+      console.log(`[CS2 Match] Игроков Team B: ${Object.keys(teamB).length}`);
       
-      // Ждем немного
-      console.log('[CS2] ⏱️ Ожидание 2 сек перед загрузкой config...');
+      // Ждем
+      console.log('[CS2] ⏱️ Ожидание 2 сек...');
       await new Promise(resolve => setTimeout(resolve, 2000));
       
-      // Загружаем конфиг (MatchZy сам сменит карту!)
-      console.log(`[CS2 Match] Отправка команды: matchzy_loadmatch cfg/MatchZy/${configPath}`);
+      // Загружаем конфиг
+      console.log(`[CS2 Match] Загрузка конфига через RCON...`);
       await this.executeCommand(
         server.host,
         server.port,
@@ -121,11 +122,14 @@ class CS2Service {
         `matchzy_loadmatch cfg/MatchZy/${configPath}`
       );
       
-      console.log('[CS2 Match] ✅ Конфиг загружен! MatchZy меняет карту и ждет игроков...');
+      console.log('[CS2 Match] ✅ Конфиг загружен!');
+      console.log('[CS2 Match] ℹ️ Игроки должны:');
+      console.log('[CS2 Match]   1. Подключиться: connect 134.209.246.42:27015');
+      console.log('[CS2 Match]   2. Написать в чат: .ready');
       
       return {
         success: true,
-        message: `Матч запускается на ${map}. Подключайтесь и нажимайте Ready!`,
+        message: `Матч на de_dust2. Подключитесь и напишите .ready в чате!`,
         connectString: `connect ${server.host}:${server.port}`
       };
       
