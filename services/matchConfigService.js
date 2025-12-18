@@ -26,11 +26,11 @@ class MatchConfigService {
     const config = {
       "matchid": safeMatchId,
       "num_maps": 1,
-      "maplist": ["de_dust2"],
+      "maplist": [map],
       "map_sides": ["team1_ct"],
       "skip_veto": true,
       "players_per_team": Math.max(Object.keys(teamA).length, Object.keys(teamB).length),
-      "min_players_to_ready": 0,
+      "min_players_to_ready": Math.max(Object.keys(teamA).length, Object.keys(teamB).length),
       "team1": {
         "name": "Team A",
         "players": teamA

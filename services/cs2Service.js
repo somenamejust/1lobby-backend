@@ -92,29 +92,27 @@ class CS2Service {
         throw new Error('Server not assigned to this lobby');
       }
       
-      // ❌ УБИРАЕМ ВЕСЬ БЛОК СМЕНЫ КАРТЫ!
-      // console.log(`[CS2] Смена карты на ${map}...`);
-      // await this.executeCommand(...);
-      // await new Promise(resolve => setTimeout(resolve, 30000));
+      // ❌ НЕ МЕНЯЕМ КАРТУ ЧЕРЕЗ RCON!
+      console.log(`[CS2] Загрузка матча на карте: ${map}`);
+      console.log('[CS2] ⚠️ Смена карты будет выполнена через MatchZy после загрузки конфига');
       
-      // ⚠️ ВАЖНО: Игнорируем параметр map, всегда используем de_dust2
-      console.log(`[CS2] ⚠️ Запуск матча на текущей карте (de_dust2), запрошенная карта ${map} игнорируется`);
-      
-      // Создаем конфиг С maplist = ["de_dust2"]
+      // Создаем конфиг с правильной картой
       const configPath = await matchConfigService.createAndUploadMatchConfig({
         matchId: lobbyId,
-        map: "de_dust2", // ⬅️ ВСЕГДА de_dust2!
+        map: map, // ⬅️ Передаем ПРАВИЛЬНУЮ карту!
         teamA: teamA,
         teamB: teamB
       });
       
       console.log(`[CS2 Match] Config загружен: ${configPath}`);
+      console.log(`[CS2 Match] Карта в конфиге: ${map}`);
+      console.log(`[CS2 Match] Ожидается ${Object.keys(teamA).length + Object.keys(teamB).length} игроков`);
       
       // Ждем немного
       console.log('[CS2] ⏱️ Ожидание 2 сек перед загрузкой config...');
       await new Promise(resolve => setTimeout(resolve, 2000));
       
-      // Загружаем конфиг
+      // Загружаем конфиг (MatchZy сам сменит карту!)
       console.log(`[CS2 Match] Отправка команды: matchzy_loadmatch cfg/MatchZy/${configPath}`);
       await this.executeCommand(
         server.host,
@@ -123,11 +121,11 @@ class CS2Service {
         `matchzy_loadmatch cfg/MatchZy/${configPath}`
       );
       
-      console.log('[CS2 Match] ✅ Команда отправлена! MatchZy загружает матч...');
+      console.log('[CS2 Match] ✅ Конфиг загружен! MatchZy меняет карту и ждет игроков...');
       
       return {
         success: true,
-        message: `Матч запущен на de_dust2`,
+        message: `Матч запускается на ${map}. Подключайтесь и нажимайте Ready!`,
         connectString: `connect ${server.host}:${server.port}`
       };
       
