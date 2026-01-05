@@ -26,17 +26,24 @@ class MatchConfigService {
     const config = {
       "matchid": safeMatchId,
       "num_maps": 1,
-      "maplist": ["de_dust2"],
+      "maplist": [map],
       "map_sides": ["team2_ct"],
       "skip_veto": true,
       "players_per_team": Math.max(Object.keys(teamA).length, Object.keys(teamB).length),
       "min_players_to_ready": Math.max(Object.keys(teamA).length, Object.keys(teamB).length),
+      
+      "cvars": {
+        "mp_teamname_1": "Team A",
+        "mp_teamname_2": "Team B",
+        "matchzy_whitelist_enabled_default": "true"
+      },
+      
       "team1": {
         "name": "Team A",
         "players": teamA
       },
       "team2": {
-        "name": "Team B",
+        "name": "Team B", 
         "players": teamB
       }
     };
