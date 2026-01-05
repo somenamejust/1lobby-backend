@@ -93,28 +93,29 @@ class CS2Service {
         throw new Error('Server not assigned to this lobby');
       }
 
-      // Перезапуск контейнера
-      console.log('[CS2] 🔄 Перезапуск CS2 контейнера...');
-      await new Promise((resolve, reject) => {
-        exec('ssh root@134.209.246.42 "docker restart cs2-docker"', (error, stdout, stderr) => {
-          if (error) {
-            console.log('[CS2] ⚠️ Ошибка перезапуска:', error.message);
-            resolve();
-          } else {
-            console.log('[CS2] ✅ Контейнер перезапущен');
-            resolve();
-          }
-        });
-      });
-
-      // 🆕 УВЕЛИЧЕНО ВРЕМЯ ОЖИДАНИЯ
-      console.log('[CS2] ⏱️ Ожидание запуска сервера (35 сек)...');
-      await new Promise(resolve => setTimeout(resolve, 35000));
+      console.log('[CS2] Завершаем предыдущий матч (если есть)...');
       
-      // Создаем конфиг (теперь с любой картой)
+      // 🆕 ВМЕСТО ПЕРЕЗАГРУЗКИ КОНТЕЙНЕРА - ЗАВЕРШАЕМ МАТЧ
+      try {
+        await this.executeCommand(
+          server.host,
+          server.port,
+          server.rconPassword,
+          'matchzy_endmatch'
+        );
+        console.log('[CS2] ✅ Предыдущий матч завершен');
+      } catch (error) {
+        console.log('[CS2] ℹ️ Нет активного матча для завершения');
+      }
+      
+      // Ждем очистки состояния
+      console.log('[CS2] ⏱️ Ожидание 3 сек...');
+      await new Promise(resolve => setTimeout(resolve, 3000));
+      
+      // Создаем конфиг
       const configPath = await matchConfigService.createAndUploadMatchConfig({
         matchId: lobbyId,
-        map: map, // 🆕 Передаем карту из лобби
+        map: map,
         teamA: teamA,
         teamB: teamB
       });
@@ -123,6 +124,15 @@ class CS2Service {
       console.log(`[CS2 Match] Карта: ${map}`);
       console.log(`[CS2 Match] Team A (T): ${Object.keys(teamA).join(', ')}`);
       console.log(`[CS2 Match] Team B (CT): ${Object.keys(teamB).join(', ')}`);
+      
+      // 🆕 ВКЛЮЧАЕМ WHITELIST ДО ЗАГРУЗКИ КОНФИГА
+      console.log('[CS2] Настройка whitelist...');
+      await this.executeCommand(
+        server.host,
+        server.port,
+        server.rconPassword,
+        'matchzy_whitelist_enabled_default true'
+      );
       
       // Загружаем конфиг
       console.log('[CS2] ⏱️ Ожидание 2 сек перед загрузкой...');
@@ -136,7 +146,7 @@ class CS2Service {
         `matchzy_loadmatch cfg/MatchZy/${configPath}`
       );
       
-      // 🆕 СМЕНА КАРТЫ ЕСЛИ НУЖНО
+      // Смена карты если нужно
       if (map !== 'de_dust2') {
         console.log(`[CS2] ⏱️ Ожидание 3 сек для загрузки конфига...`);
         await new Promise(resolve => setTimeout(resolve, 3000));
@@ -151,8 +161,8 @@ class CS2Service {
         
         console.log(`[CS2] ✅ Карта изменена на ${map}`);
         
-        // Перезагружаем конфиг после смены карты
-        await new Promise(resolve => setTimeout(resolve, 10000)); // Ждем загрузки карты
+        // Ждем загрузки карты
+        await new Promise(resolve => setTimeout(resolve, 10000));
         
         console.log(`[CS2] Перезагрузка конфига после смены карты...`);
         await this.executeCommand(
