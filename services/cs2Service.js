@@ -93,22 +93,24 @@ class CS2Service {
         throw new Error('Server not assigned to this lobby');
       }
 
-      console.log('[CS2] Завершаем предыдущий матч (если есть)...');
+      console.log('[CS2] Запуск нового матча...');
       
-      // 🆕 ВМЕСТО ПЕРЕЗАГРУЗКИ КОНТЕЙНЕРА - ЗАВЕРШАЕМ МАТЧ
+      // 🎉 ПЕРЕЗАГРУЖАЕМ ПЛАГИН MATCHZY ВМЕСТО КОНТЕЙНЕРА!
+      console.log('[CS2] Перезагрузка плагина MatchZy...');
       try {
         await this.executeCommand(
           server.host,
           server.port,
           server.rconPassword,
-          'matchzy_endmatch'
+          'css_plugins reload MatchZy'
         );
-        console.log('[CS2] ✅ Предыдущий матч завершен');
+        console.log('[CS2] ✅ MatchZy перезагружен');
       } catch (error) {
-        console.log('[CS2] ℹ️ Нет активного матча для завершения');
+        console.log('[CS2] ⚠️ Ошибка перезагрузки плагина:', error.message);
+        throw error;
       }
       
-      // Ждем очистки состояния
+      // Пауза после перезагрузки плагина
       console.log('[CS2] ⏱️ Ожидание 3 сек...');
       await new Promise(resolve => setTimeout(resolve, 3000));
       
@@ -125,26 +127,21 @@ class CS2Service {
       console.log(`[CS2 Match] Team A (T): ${Object.keys(teamA).join(', ')}`);
       console.log(`[CS2 Match] Team B (CT): ${Object.keys(teamB).join(', ')}`);
       
-      // 🆕 ВКЛЮЧАЕМ WHITELIST ДО ЗАГРУЗКИ КОНФИГА
-      console.log('[CS2] Настройка whitelist...');
-      await this.executeCommand(
-        server.host,
-        server.port,
-        server.rconPassword,
-        'matchzy_whitelist_enabled_default true'
-      );
-      
       // Загружаем конфиг
-      console.log('[CS2] ⏱️ Ожидание 2 сек перед загрузкой...');
-      await new Promise(resolve => setTimeout(resolve, 2000));
-      
       console.log(`[CS2 Match] Загрузка конфига...`);
-      await this.executeCommand(
+      const loadResponse = await this.executeCommand(
         server.host,
         server.port,
         server.rconPassword,
         `matchzy_loadmatch cfg/MatchZy/${configPath}`
       );
+      
+      console.log(`[CS2 Match] Ответ MatchZy:`, loadResponse);
+      
+      // Проверяем успех загрузки
+      if (loadResponse && loadResponse.includes('cannot load a new match')) {
+        throw new Error('Failed to load match config after plugin reload');
+      }
       
       // Смена карты если нужно
       if (map !== 'de_dust2') {
@@ -156,14 +153,39 @@ class CS2Service {
           server.host,
           server.port,
           server.rconPassword,
-          `changelevel ${map}`
+          `map ${map}`
         );
         
-        console.log(`[CS2] ✅ Карта изменена на ${map}`);
+        console.log(`[CS2] ✅ Команда смены карты отправлена`);
         
         // Ждем загрузки карты
-        await new Promise(resolve => setTimeout(resolve, 10000));
+        console.log('[CS2] ⏱️ Ожидание загрузки карты...');
+        let mapLoaded = false;
+        let mapAttempts = 0;
+        const maxMapAttempts = 15;
         
+        while (!mapLoaded && mapAttempts < maxMapAttempts) {
+          mapAttempts++;
+          await new Promise(resolve => setTimeout(resolve, 1500));
+          
+          try {
+            const response = await this.executeCommand(
+              server.host,
+              server.port,
+              server.rconPassword,
+              'status'
+            );
+            
+            if (response && response.includes(`map     : ${map}`)) {
+              mapLoaded = true;
+              console.log(`[CS2] ✅ Карта ${map} загружена`);
+            }
+          } catch (error) {
+            // Продолжаем ждать
+          }
+        }
+        
+        // Перезагружаем конфиг после смены карты
         console.log(`[CS2] Перезагрузка конфига после смены карты...`);
         await this.executeCommand(
           server.host,
