@@ -31,11 +31,11 @@ class MatchConfigService {
       "skip_veto": true,
       "players_per_team": Math.max(Object.keys(teamA).length, Object.keys(teamB).length),
       "min_players_to_ready": Math.max(Object.keys(teamA).length, Object.keys(teamB).length),
-      
+
       "cvars": {
         "mp_teamname_1": "Team A",
         "mp_teamname_2": "Team B",
-        "matchzy_whitelist_enabled_default": "true"
+        "matchzy_whitelist_enabled_default": "false"
       },
       
       "team1": {

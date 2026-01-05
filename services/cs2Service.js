@@ -95,23 +95,17 @@ class CS2Service {
 
       console.log('[CS2] Запуск нового матча...');
       
-      // 🎉 ПЕРЕЗАГРУЖАЕМ ПЛАГИН MATCHZY ВМЕСТО КОНТЕЙНЕРА!
+      // Перезагружаем плагин MatchZy
       console.log('[CS2] Перезагрузка плагина MatchZy...');
-      try {
-        await this.executeCommand(
-          server.host,
-          server.port,
-          server.rconPassword,
-          'css_plugins reload MatchZy'
-        );
-        console.log('[CS2] ✅ MatchZy перезагружен');
-      } catch (error) {
-        console.log('[CS2] ⚠️ Ошибка перезагрузки плагина:', error.message);
-        throw error;
-      }
+      await this.executeCommand(
+        server.host,
+        server.port,
+        server.rconPassword,
+        'css_plugins reload MatchZy'
+      );
+      console.log('[CS2] ✅ MatchZy перезагружен');
       
-      // Пауза после перезагрузки плагина
-      console.log('[CS2] ⏱️ Ожидание 3 сек...');
+      // Пауза после перезагрузки
       await new Promise(resolve => setTimeout(resolve, 3000));
       
       // Создаем конфиг
@@ -127,7 +121,7 @@ class CS2Service {
       console.log(`[CS2 Match] Team A (T): ${Object.keys(teamA).join(', ')}`);
       console.log(`[CS2 Match] Team B (CT): ${Object.keys(teamB).join(', ')}`);
       
-      // Загружаем конфиг
+      // Загружаем конфиг (MatchZy САМ сменит карту!)
       console.log(`[CS2 Match] Загрузка конфига...`);
       const loadResponse = await this.executeCommand(
         server.host,
@@ -143,62 +137,47 @@ class CS2Service {
         throw new Error('Failed to load match config after plugin reload');
       }
       
-      // Смена карты если нужно
-      if (map !== 'de_dust2') {
-        console.log(`[CS2] ⏱️ Ожидание 3 сек для загрузки конфига...`);
-        await new Promise(resolve => setTimeout(resolve, 3000));
+      // 🆕 ЖДЕМ ПОКА MATCHZY СМЕНИТ КАРТУ (если нужно)
+      console.log(`[CS2] ⏱️ Ожидание готовности сервера...`);
+
+      let serverReady = false;
+      let attempts = 0;
+      const maxAttempts = 20;
+
+      while (!serverReady && attempts < maxAttempts) {
+        attempts++;
+        await new Promise(resolve => setTimeout(resolve, 1500));
         
-        console.log(`[CS2] Смена карты на ${map}...`);
-        await this.executeCommand(
-          server.host,
-          server.port,
-          server.rconPassword,
-          `map ${map}`
-        );
-        
-        console.log(`[CS2] ✅ Команда смены карты отправлена`);
-        
-        // Ждем загрузки карты
-        console.log('[CS2] ⏱️ Ожидание загрузки карты...');
-        let mapLoaded = false;
-        let mapAttempts = 0;
-        const maxMapAttempts = 15;
-        
-        while (!mapLoaded && mapAttempts < maxMapAttempts) {
-          mapAttempts++;
-          await new Promise(resolve => setTimeout(resolve, 1500));
+        try {
+          const response = await this.executeCommand(
+            server.host,
+            server.port,
+            server.rconPassword,
+            'status'
+          );
           
-          try {
-            const response = await this.executeCommand(
-              server.host,
-              server.port,
-              server.rconPassword,
-              'status'
-            );
-            
-            if (response && response.includes(`map     : ${map}`)) {
-              mapLoaded = true;
-              console.log(`[CS2] ✅ Карта ${map} загружена`);
-            }
-          } catch (error) {
-            // Продолжаем ждать
+          // Проверяем что:
+          // 1. Сервер в состоянии "game" (не "levelload")
+          // 2. Карта правильная
+          if (response && 
+              response.includes('@ Current  :  game') && 
+              response.includes(`map     : ${map}`)) {
+            serverReady = true;
+            console.log(`[CS2] ✅ Сервер готов на карте ${map}`);
           }
+        } catch (error) {
+          // Продолжаем ждать
         }
-        
-        // Перезагружаем конфиг после смены карты
-        console.log(`[CS2] Перезагрузка конфига после смены карты...`);
-        await this.executeCommand(
-          server.host,
-          server.port,
-          server.rconPassword,
-          `matchzy_loadmatch cfg/MatchZy/${configPath}`
-        );
+      }
+
+      if (!serverReady) {
+        console.log('[CS2] ⚠️ Таймаут ожидания готовности сервера');
       }
       
       console.log('[CS2 Match] ✅ Конфиг загружен!');
       console.log('[CS2 Match] ℹ️ Инструкция:');
       console.log('[CS2 Match]   1. connect 134.209.246.42:27015');
-      console.log('[CS2 Match]   2. Автоматическое распределение в команды');
+      console.log('[CS2 Match]   2. АВТОМАТИЧЕСКОЕ распределение в команды');
       console.log('[CS2 Match]   3. Написать .ready в чат');
       
       return {
