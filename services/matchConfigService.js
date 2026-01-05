@@ -35,7 +35,12 @@ class MatchConfigService {
       "cvars": {
         "mp_teamname_1": "Team A",
         "mp_teamname_2": "Team B",
-        "matchzy_whitelist_enabled_default": "false"
+        "matchzy_whitelist_enabled_default": "false",
+
+        "mp_force_pick_time": "0",
+        "mp_team_intro_time": "0",
+        "mp_halftime_duration": "15",
+        "mp_warmup_pausetimer": "0"
       },
       
       "team1": {
