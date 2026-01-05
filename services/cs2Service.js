@@ -1,3 +1,4 @@
+const { exec } = require('child_process');
 const { Rcon } = require('rcon-client');
 const matchConfigService = require('./matchConfigService');
 const cs2ServerPool = require('./cs2ServerPool');
@@ -92,24 +93,29 @@ class CS2Service {
         throw new Error('Server not assigned to this lobby');
       }
       
-      // ⚠️ ВРЕМЕННО: все матчи на de_dust2 (без смены карты = без segfault)
       if (map !== 'de_dust2') {
         console.log(`[CS2] ⚠️ ВРЕМЕННО: Карта ${map} недоступна, используем de_dust2`);
       }
+
+      // 🆕 Перезапуск контейнера для очистки старых матчей
+      console.log('[CS2] 🔄 Перезапуск CS2 контейнера...');
+      await new Promise((resolve, reject) => {
+        exec('ssh root@134.209.246.42 "docker restart cs2-docker"', (error, stdout, stderr) => {
+          if (error) {
+            console.log('[CS2] ⚠️ Ошибка перезапуска:', error.message);
+            resolve(); // Продолжаем даже если не удалось
+          } else {
+            console.log('[CS2] ✅ Контейнер перезапущен');
+            resolve();
+          }
+        });
+      });
+
+      // Ждем пока сервер запустится
+      console.log('[CS2] ⏱️ Ожидание запуска сервера (25 сек)...');
+      await new Promise(resolve => setTimeout(resolve, 25000));
       
-      // 🆕 ШАГ 1: СБРОСИТЬ старый матч (КРИТИЧНО!)
-      console.log('[CS2] 🔄 Сброс предыдущего матча...');
-      try {
-        await this.executeCommand(server.host, server.port, server.rconPassword, 'matchzy_reset');
-        console.log('[CS2] ✅ Предыдущий матч сброшен');
-      } catch (resetError) {
-        console.log('[CS2] ℹ️ Сброс не требуется (нет активного матча)');
-      }
-      
-      // Пауза после сброса
-      await new Promise(resolve => setTimeout(resolve, 1000));
-      
-      // ШАГ 2: Создаем конфиг
+      // Создаем конфиг
       const configPath = await matchConfigService.createAndUploadMatchConfig({
         matchId: lobbyId,
         map: "de_dust2",
@@ -118,10 +124,10 @@ class CS2Service {
       });
       
       console.log(`[CS2 Match] Config создан: ${configPath}`);
-      console.log(`[CS2 Match] Team A (CT): ${Object.keys(teamA).join(', ')}`);
-      console.log(`[CS2 Match] Team B (T): ${Object.keys(teamB).join(', ')}`);
+      console.log(`[CS2 Match] Team A (T): ${Object.keys(teamA).join(', ')}`);
+      console.log(`[CS2 Match] Team B (CT): ${Object.keys(teamB).join(', ')}`);
       
-      // ШАГ 3: Загружаем конфиг
+      // Загружаем конфиг
       console.log('[CS2] ⏱️ Ожидание 2 сек перед загрузкой...');
       await new Promise(resolve => setTimeout(resolve, 2000));
       
@@ -134,10 +140,10 @@ class CS2Service {
       );
       
       console.log('[CS2 Match] ✅ Конфиг загружен!');
-      console.log('[CS2 Match] ℹ️ Инструкция для игроков:');
+      console.log('[CS2 Match] ℹ️ Инструкция:');
       console.log('[CS2 Match]   1. connect 134.209.246.42:27015');
       console.log('[CS2 Match]   2. Автоматическое распределение в команды');
-      console.log('[CS2 Match]   3. Написать в чат: .ready');
+      console.log('[CS2 Match]   3. Написать .ready в чат');
       
       return {
         success: true,
