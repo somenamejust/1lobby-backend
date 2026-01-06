@@ -137,7 +137,17 @@ class CS2Service {
         throw new Error('Failed to load match config after plugin reload');
       }
       
-      // 🆕 ЖДЕМ ПОКА MATCHZY СМЕНИТ КАРТУ (если нужно)
+      // 🆕 ПРИНУДИТЕЛЬНО УСТАНАВЛИВАЕМ CVARS ДЛЯ АВТОМАТИЧЕСКОГО РАСПРЕДЕЛЕНИЯ
+      console.log('[CS2] Установка cvars для автоматического распределения...');
+      await this.executeCommand(
+        server.host,
+        server.port,
+        server.rconPassword,
+        'mp_team_intro_time 0; mp_force_pick_time 0; mp_limitteams 0; mp_autoteambalance 0'
+      );
+      console.log('[CS2] ✅ Cvars установлены принудительно');
+      
+      // ЖДЕМ ПОКА MATCHZY СМЕНИТ КАРТУ (если нужно)
       console.log(`[CS2] ⏱️ Ожидание готовности сервера...`);
 
       let serverReady = false;
