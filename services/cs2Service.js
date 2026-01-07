@@ -156,12 +156,10 @@ class CS2Service {
             'status'
           );
           
-          // Проверяем что:
-          // 1. Сервер в состоянии "game" (не "levelload")
-          // 2. Карта правильная
+          // 🆕 ИСПРАВЛЕНО: Проверяем наличие карты в spawngroup
           if (response && 
               response.includes('@ Current  :  game') && 
-              response.includes(`map     : ${map}`)) {
+              response.includes(`[1: ${map} |`)) {
             serverReady = true;
             console.log(`[CS2] ✅ Сервер готов на карте ${map}`);
           }
