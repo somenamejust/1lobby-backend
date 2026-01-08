@@ -505,14 +505,24 @@ router.put('/:id/start', async (req, res) => {
           const radiantPlayers = [];
           const direPlayers = [];
 
-          for (const slot of radiantSlots) {
-            const user = await User.findOne({ id: slot.user.id });
-            if (user && user.steamId) {
-              radiantPlayers.push({ steamId: user.steamId, slot: slot.position });
-            } else {
-              console.log(`⚠️ У игрока ${slot.user.username} нет Steam ID`);
-            }
+        for (const slot of radiantSlots) {
+          console.log(`[DEBUG] Проверка игрока Radiant: ${slot.user.username} (ID: ${slot.user.id})`);
+          const user = await User.findOne({ id: slot.user.id });
+          
+          if (!user) {
+            console.log(`[DEBUG] ❌ Пользователь ${slot.user.id} НЕ НАЙДЕН в БД!`);
+            continue;
           }
+          
+          console.log(`[DEBUG] Найден в БД: ${user.username}, steamId: ${user.steamId || 'НЕТ'}`);
+          
+          if (user.steamId) {
+            radiantPlayers.push({ steamId: user.steamId, slot: slot.position });
+            console.log(`[DEBUG] ✅ Добавлен: ${user.steamId}`);
+          } else {
+            console.log(`[DEBUG] ⚠️ У игрока ${slot.user.username} steamId = ${user.steamId}`);
+          }
+        }
 
           for (const slot of direSlots) {
             const user = await User.findOne({ id: slot.user.id });
