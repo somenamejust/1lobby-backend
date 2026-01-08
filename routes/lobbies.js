@@ -499,43 +499,65 @@ router.put('/:id/start', async (req, res) => {
         try {
           console.log('[Dota 2] Создание лобби...');
           
-          const radiantSlots = lobby.slots.filter(s => s.user && s.team === 'Radiant');
-          const direSlots = lobby.slots.filter(s => s.user && s.team === 'Dire');
+          const radiantSlots = lobby.slots.filter(s => s.user && s.team === 'A');
+          const direSlots = lobby.slots.filter(s => s.user && s.team === 'B');
+
+          console.log(`[Dota 2] Найдено слотов: Radiant (A)=${radiantSlots.length}, Dire (B)=${direSlots.length}`);
 
           const radiantPlayers = [];
           const direPlayers = [];
 
-        for (const slot of radiantSlots) {
-          console.log(`[DEBUG] Проверка игрока Radiant: ${slot.user.username} (ID: ${slot.user.id})`);
-          const user = await User.findOne({ id: slot.user.id });
-          
-          if (!user) {
-            console.log(`[DEBUG] ❌ Пользователь ${slot.user.id} НЕ НАЙДЕН в БД!`);
-            continue;
-          }
-          
-          console.log(`[DEBUG] Найден в БД: ${user.username}, steamId: ${user.steamId || 'НЕТ'}`);
-          
-          if (user.steamId) {
-            radiantPlayers.push({ steamId: user.steamId, slot: slot.position });
-            console.log(`[DEBUG] ✅ Добавлен: ${user.steamId}`);
-          } else {
-            console.log(`[DEBUG] ⚠️ У игрока ${slot.user.username} steamId = ${user.steamId}`);
-          }
-        }
-
-          for (const slot of direSlots) {
+          // === RADIANT (TEAM A) ===
+          console.log('[DEBUG] === ПРОВЕРКА RADIANT (TEAM A) ===');
+          for (const slot of radiantSlots) {
+            console.log(`[DEBUG] Проверка игрока Radiant: ${slot.user.username} (ID: ${slot.user.id})`);
             const user = await User.findOne({ id: slot.user.id });
-            if (user && user.steamId) {
-              direPlayers.push({ steamId: user.steamId, slot: slot.position });
+            
+            if (!user) {
+              console.log(`[DEBUG] ❌ Пользователь ${slot.user.id} НЕ НАЙДЕН в БД!`);
+              continue;
+            }
+            
+            console.log(`[DEBUG] Найден в БД: ${user.username}, steamId: ${user.steamId || 'НЕТ'}`);
+            
+            if (user.steamId) {
+              radiantPlayers.push({ steamId: user.steamId, slot: slot.position });
+              console.log(`[DEBUG] ✅ Добавлен в Radiant: ${user.steamId}`);
             } else {
-              console.log(`⚠️ У игрока ${slot.user.username} нет Steam ID`);
+              console.log(`[DEBUG] ⚠️ У игрока ${slot.user.username} steamId = ${user.steamId}`);
             }
           }
 
+          // === DIRE (TEAM B) ===
+          console.log('[DEBUG] === ПРОВЕРКА DIRE (TEAM B) ===');
+          for (const slot of direSlots) {
+            console.log(`[DEBUG] Проверка игрока Dire: ${slot.user.username} (ID: ${slot.user.id})`);
+            const user = await User.findOne({ id: slot.user.id });
+            
+            if (!user) {
+              console.log(`[DEBUG] ❌ Пользователь ${slot.user.id} НЕ НАЙДЕН в БД!`);
+              continue;
+            }
+            
+            console.log(`[DEBUG] Найден в БД: ${user.username}, steamId: ${user.steamId || 'НЕТ'}`);
+            
+            if (user.steamId) {
+              direPlayers.push({ steamId: user.steamId, slot: slot.position });
+              console.log(`[DEBUG] ✅ Добавлен в Dire: ${user.steamId}`);
+            } else {
+              console.log(`[DEBUG] ⚠️ У игрока ${slot.user.username} steamId = ${user.steamId}`);
+            }
+          }
+
+          console.log(`[DEBUG] === ИТОГО ===`);
+          console.log(`[DEBUG] Radiant игроков с Steam ID: ${radiantPlayers.length}`);
+          console.log(`[DEBUG] Dire игроков с Steam ID: ${direPlayers.length}`);
+
           if (radiantPlayers.length === 0 && direPlayers.length === 0) {
-            console.log('[Dota 2] Нет игроков с Steam ID');
+            console.log('[Dota 2] ❌ Нет игроков с Steam ID - лобби НЕ создано');
           } else {
+            console.log('[Dota 2] 🎮 Отправка запроса на создание лобби в боте...');
+            
             const botResult = await dotaBotService.createDotaLobby({
               name: lobby._id.toString(),
               password: lobby.password || '',
@@ -549,10 +571,11 @@ router.put('/:id/start', async (req, res) => {
             lobby.botAccountId = botResult.lobbyId;
             await lobby.save();
 
-            console.log(`[Dota 2] Лобби создано! ID: ${botResult.lobbyId}`);
+            console.log(`[Dota 2] ✅ Лобби создано! Bot Lobby ID: ${botResult.lobbyId}`);
           }
         } catch (botError) {
-          console.error('[Dota 2] Ошибка создания лобби:', botError.message);
+          console.error('[Dota 2] ❌ Ошибка создания лобби:', botError.message);
+          console.error('[Dota 2] Stack trace:', botError.stack);
         }
       }
 
@@ -561,22 +584,23 @@ router.put('/:id/start', async (req, res) => {
         try {
           const server = dotaBotService.getAvailableBotServer();
           
-          console.log('[Dota 2] Ожидание 15 секунд для входа игроков...');
+          console.log('[Dota 2] ⏳ Ожидание 15 секунд для входа игроков...');
           await new Promise(resolve => setTimeout(resolve, 15000));
           
-          console.log('[Dota 2] Проверка игроков в лобби...');
+          console.log('[Dota 2] 🔍 Проверка игроков в лобби...');
           const playersStatus = await dotaBotService.checkLobbyPlayers(lobby.botAccountId, server.url);
           
-          console.log(`[Dota 2] В лобби: ${playersStatus.playersInLobby?.length || 0} из ${playersStatus.expectedPlayers}`);
+          console.log(`[Dota 2] 📊 В лобби: ${playersStatus.playersInLobby?.length || 0} из ${playersStatus.expectedPlayers}`);
           
+          console.log('[Dota 2] 🚀 Запуск игры...');
           await dotaBotService.startGame(lobby.botAccountId, server.url);
-          console.log(`[Dota 2] Игра запущена!`);
+          console.log(`[Dota 2] ✅ Игра запущена!`);
           
         } catch (botError) {
-          console.error('[Dota 2] Ошибка запуска игры:', botError.message);
+          console.error('[Dota 2] ❌ Ошибка запуска игры:', botError.message);
         }
       }
-    } 
+    }
     
     // ========== CS2 ЛОГИКА ==========
     else if (lobby.game === 'CS2') {
