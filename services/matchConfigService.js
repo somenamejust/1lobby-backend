@@ -32,9 +32,9 @@ class MatchConfigService {
       "players_per_team": Math.max(Object.keys(teamA).length, Object.keys(teamB).length),
       "min_players_to_ready": Math.max(Object.keys(teamA).length, Object.keys(teamB).length),
 
-      "remote_backup_url": "http://164.92.250.91:5000/api/lobbies/matchzy-events",
-      "remote_backup_header_key": "",
-      "remote_backup_header_value": "",
+      "remote_log_url": "http://164.92.250.91:5000/api/lobbies/matchzy-events",
+      "remote_log_header_key": "",
+      "remote_log_header_value": "",
 
       "cvars": {
         "mp_teamname_1": "Team A",
