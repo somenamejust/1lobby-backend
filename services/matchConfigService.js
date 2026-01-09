@@ -30,7 +30,7 @@ class MatchConfigService {
       "map_sides": ["team2_ct"],
       "skip_veto": true,
       "players_per_team": Math.max(Object.keys(teamA).length, Object.keys(teamB).length),
-      "min_players_to_ready": Math.max(Object.keys(teamA).length, Object.keys(teamB).length),
+      "min_players_to_ready": 1,
 
       "matchzy_remote_log_url": "http://164.92.250.91:5000/api/lobbies/matchzy-events",
       "matchzy_remote_log_header_key": "",
