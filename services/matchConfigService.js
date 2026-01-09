@@ -30,11 +30,11 @@ class MatchConfigService {
       "map_sides": ["team2_ct"],
       "skip_veto": true,
       "players_per_team": Math.max(Object.keys(teamA).length, Object.keys(teamB).length),
-      "min_players_to_ready": 1,
+      "min_players_to_ready": Math.max(Object.keys(teamA).length, Object.keys(teamB).length),
 
-      "matchzy_remote_log_url": "http://164.92.250.91:5000/api/lobbies/matchzy-events",
-      "matchzy_remote_log_header_key": "",
-      "matchzy_remote_log_header_value": "",
+      "remote_backup_url": "http://164.92.250.91:5000/api/lobbies/matchzy-events",
+      "remote_backup_header_key": "",
+      "remote_backup_header_value": "",
 
       "cvars": {
         "mp_teamname_1": "Team A",
