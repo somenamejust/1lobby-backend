@@ -132,6 +132,16 @@ class CS2Service {
       
       console.log(`[CS2 Match] Ответ MatchZy:`, loadResponse);
       
+      // 🆕 УСТАНАВЛИВАЕМ WEBHOOK URL ЧЕРЕЗ CVAR
+      console.log('[CS2] Установка webhook URL...');
+      await this.executeCommand(
+        server.host,
+        server.port,
+        server.rconPassword,
+        'matchzy_remote_log_url "http://164.92.250.91:5000/api/lobbies/matchzy-events"'
+      );
+      console.log('[CS2] ✅ Webhook URL установлен через CVAR');
+      
       // Проверяем успех загрузки
       if (loadResponse && loadResponse.includes('cannot load a new match')) {
         throw new Error('Failed to load match config after plugin reload');
