@@ -829,7 +829,7 @@ router.post('/matchzy-events', async (req, res) => {
               server.host,
               server.port,
               server.rconPassword,
-              'sv_kickall'
+              'kickall'
             );
             console.log('[CS2] ✅ Все игроки кикнуты');
             
