@@ -794,73 +794,101 @@ router.post('/matchzy-events', async (req, res) => {
     console.log(JSON.stringify(event, null, 2));
     console.log('========================================');
 
-    if (event.event === 'series_end') {
-      // Находим лобби
-      const lobby = await Lobby.findOne({ 
-        game: 'CS2',
-        status: 'in_progress'
-      }).sort({ startedAt: -1 });
+    // 🆕 ИЗВЛЕКАЕМ ТИП СОБЫТИЯ
+    const eventType = event.event;
+    
+    // Игнорируем события которые не нужны
+    if (eventType === 'round_end' || eventType === 'map_result') {
+      console.log(`ℹ️ Событие ${eventType} проигнорировано`);
+      return res.status(200).json({ success: true, message: 'Event ignored' });
+    }
 
-      if (!lobby) {
-        console.warn('⚠️ Активное CS2 лобби не найдено');
-        return res.status(200).json({ 
-          success: false, 
-          message: 'No active lobby found' 
-        });
-      }
+    // 🆕 ИЩЕМ ЛОББИ ПО MATCHID
+    const matchId = event.matchid;
+    if (!matchId) {
+      console.log('⚠️ Нет matchid в событии');
+      return res.status(400).json({ success: false, error: 'No matchid' });
+    }
 
-      console.log(`✅ Найдено лобби: ${lobby.id}`);
+    // Ищем лобби которое содержит этот matchId в конце своего ID
+    const lobby = await Lobby.findOne({
+      id: { $gte: matchId * 1000, $lt: (matchId + 1) * 1000 }
+    });
 
-      // 🎯 ВЫЗЫВАЕМ ОБЩУЮ ФУНКЦИЮ!
-      const io = req.app.get('socketio');
-      const result = await processMatchResult(lobby._id, event, io);
+    if (!lobby) {
+      console.log(`⚠️ Лобби не найдено для matchId: ${matchId}`);
+      return res.status(404).json({ success: false, error: 'Lobby not found' });
+    }
+
+    // Обрабатываем series_end
+    if (eventType === 'series_end') {
+      console.log('✅ Найдено лобби:', lobby.id);
       
-      // 🆕 КИКАЕМ ВСЕХ И ОСВОБОЖДАЕМ СЕРВЕР ЧЕРЕЗ 10 СЕКУНД
-      console.log('[CS2] Запланирован кик и освобождение сервера через 10 секунд...');
-      setTimeout(async () => {
-        try {
-          const cs2Service = require('../services/cs2Service');
-          const cs2ServerPool = require('../services/cs2ServerPool');
-          const server = cs2ServerPool.getServerByLobby(lobby.id);
-          
-          if (server) {
-            // Кикаем всех игроков
+      await processMatchResult(lobby, event);
+      
+      // 🎮 CS2: Очистка сервера с задержкой (для просмотра результатов)
+      if (lobby.game === 'CS2') {
+        console.log('🎮 CS2 матч завершен, сервер будет очищен через 10 секунд');
+        console.log('[CS2] Запланирован кик и освобождение сервера через 10 секунд...');
+        
+        // 🆕 НОВАЯ ЛОГИКА: Сохраняем server ДО setTimeout
+        const cs2Service = require('../services/cs2Service');
+        const cs2ServerPool = require('../services/cs2ServerPool');
+        const server = cs2ServerPool.getServerByLobby(lobby.id);
+        
+        if (!server) {
+          console.log('[CS2] ⚠️ Сервер не найден в пуле');
+          return res.status(200).json({ success: true });
+        }
+        
+        // Сохраняем данные сервера для использования внутри setTimeout
+        const serverHost = server.host;
+        const serverPort = server.port;
+        const serverRconPassword = server.rconPassword;
+        const lobbyId = lobby.id;
+        
+        setTimeout(async () => {
+          try {
+            console.log(`[CS2] Начинаем очистку для лобби ${lobbyId}`);
+            
+            // 1. Кикаем всех игроков
             await cs2Service.executeCommand(
-              server.host,
-              server.port,
-              server.rconPassword,
+              serverHost,
+              serverPort,
+              serverRconPassword,
               'kickall'
             );
-            console.log('[CS2] ✅ Все игроки кикнуты');
+            console.log('[CS2] ✅ Команда kickall отправлена');
             
-            // Ждем 2 секунды
+            // 2. Ждем 2 секунды
             await new Promise(resolve => setTimeout(resolve, 2000));
             
-            // Сбрасываем карту
+            // 3. Сбрасываем карту
             await cs2Service.executeCommand(
-              server.host,
-              server.port,
-              server.rconPassword,
+              serverHost,
+              serverPort,
+              serverRconPassword,
               'changelevel de_dust2'
             );
             console.log('[CS2] ✅ Карта сброшена на de_dust2');
             
-            // Освобождаем сервер в пуле
-            cs2ServerPool.releaseServer(lobby.id);
+            // 4. ТОЛЬКО ТЕПЕРЬ освобождаем сервер
+            cs2ServerPool.releaseServer(lobbyId);
             console.log('[CS2] ✅ Сервер освобожден в пуле');
             
-          } else {
-            console.log('[CS2] ⚠️ Сервер не найден');
+          } catch (error) {
+            console.error('[CS2] ❌ Ошибка очистки сервера:', error);
+            // Все равно освобождаем сервер даже при ошибке
+            cs2ServerPool.releaseServer(lobbyId);
           }
-        } catch (error) {
-          console.error('[CS2] ❌ Ошибка очистки сервера:', error);
-        }
-      }, 10000); // 10 секунд задержка
+        }, 10000); // 10 секунд для просмотра scoreboard
+      }
       
-      return res.status(200).json(result);
+      return res.status(200).json({ success: true });
     }
 
-    console.log(`ℹ️ Событие ${event.event} проигнорировано`);
+    // Если дошли сюда - неизвестный тип события
+    console.log(`ℹ️ Неизвестное событие ${eventType} проигнорировано`);
     res.status(200).json({ success: true, message: 'Event received' });
 
   } catch (error) {
