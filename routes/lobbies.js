@@ -775,7 +775,14 @@ async function processMatchResult(lobbyId, event, io) {
 
   // WebSocket уведомление
   const freshLobby = await Lobby.findById(lobbyId);
-  io.in(lobby.id.toString()).emit('lobbyUpdated', freshLobby.toObject());
+
+  // 🆕 Проверяем что io доступен
+  if (io) {
+    io.in(lobby.id.toString()).emit('lobbyUpdated', freshLobby.toObject());
+    console.log('[WebSocket] ✅ Отправлено обновление лобби');
+  } else {
+    console.log('[WebSocket] ⚠️ Socket.io недоступен, пропускаем уведомление');
+  }
 
   console.log(`✅ Результат обработан!\n`);
   
@@ -824,14 +831,21 @@ router.post('/matchzy-events', async (req, res) => {
     if (eventType === 'series_end') {
       console.log('✅ Найдено лобби:', lobby.id);
       
-      await processMatchResult(lobby, event);
+      // 🆕 FIX: Получаем io и передаём правильные параметры
+      const io = req.app.get('socketio');
       
-      // 🎮 CS2: Очистка сервера с задержкой (для просмотра результатов)
+      // 🆕 FIX: Оборачиваем в try-catch
+      try {
+        await processMatchResult(lobby.id, event, io); // ✅ ИСПРАВЛЕНО!
+      } catch (processError) {
+        console.error('❌ [ProcessResult] Ошибка обработки результата:', processError);
+        // Продолжаем выполнение даже если processMatchResult упал
+      }
+      
+      // 🎮 CS2: Очистка сервера с задержкой
       if (lobby.game === 'CS2') {
         console.log('🎮 CS2 матч завершен, сервер будет очищен через 10 секунд');
-        console.log('[CS2] Запланирован кик и освобождение сервера через 10 секунд...');
         
-        // 🆕 НОВАЯ ЛОГИКА: Сохраняем server ДО setTimeout
         const cs2Service = require('../services/cs2Service');
         const cs2ServerPool = require('../services/cs2ServerPool');
         const server = cs2ServerPool.getServerByLobby(lobby.id);
@@ -841,7 +855,7 @@ router.post('/matchzy-events', async (req, res) => {
           return res.status(200).json({ success: true });
         }
         
-        // Сохраняем данные сервера для использования внутри setTimeout
+        // Сохраняем данные сервера ДО setTimeout
         const serverHost = server.host;
         const serverPort = server.port;
         const serverRconPassword = server.rconPassword;
@@ -849,7 +863,7 @@ router.post('/matchzy-events', async (req, res) => {
         
         setTimeout(async () => {
           try {
-            console.log(`[CS2] Начинаем очистку для лобби ${lobbyId}`);
+            console.log(`[CS2] 🧹 Начинаем очистку для лобби ${lobbyId}`);
             
             // 1. Кикаем всех игроков
             await cs2Service.executeCommand(
@@ -878,10 +892,9 @@ router.post('/matchzy-events', async (req, res) => {
             
           } catch (error) {
             console.error('[CS2] ❌ Ошибка очистки сервера:', error);
-            // Все равно освобождаем сервер даже при ошибке
             cs2ServerPool.releaseServer(lobbyId);
           }
-        }, 10000); // 10 секунд для просмотра scoreboard
+        }, 10000); // 10 секунд
       }
       
       return res.status(200).json({ success: true });
