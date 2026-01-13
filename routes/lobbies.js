@@ -774,7 +774,7 @@ async function processMatchResult(lobbyId, event, io) {
 
   console.log(`✅ Результат обработан!\n`);
   
-  return { success: true, message: 'Processed', lobby: freshLobby };
+  return { success: true, message: 'Processed', lobby: lobby };
 }
 
 // ========================================
@@ -980,7 +980,7 @@ router.post('/:id/match-result', async (req, res) => {
 /**
  * Обрабатывает нормальное завершение матча с победителем
  */
-async function handleMatchComplete(lobby, winningTeam, matchId, duration) {
+async function handleMatchComplete(lobby, winningTeam, matchId, duration, io) {
   console.log(`\n💰 [Prize Distribution] Начинаем распределение призов`);
   console.log(`   Лобби: ${lobby.id}`);
   console.log(`   Игра: ${lobby.game}`);
@@ -1014,7 +1014,7 @@ async function handleMatchComplete(lobby, winningTeam, matchId, duration) {
 /**
  * Обрабатывает таймаут игры (игра длилась слишком долго)
  */
-async function handleMatchTimeout(lobby) {
+async function handleMatchTimeout(lobby, io) {
   console.log(`\n⏰ [Timeout] Обработка таймаута игры`);
   console.log(`   Лобби: ${lobby.id}`);
   
@@ -1039,7 +1039,7 @@ async function handleMatchTimeout(lobby) {
 /**
  * Обрабатывает отменённый/некорректно завершённый матч
  */
-async function handleMatchCancelled(lobby, reason = 'Game ended abnormally or was cancelled') {
+async function handleMatchCancelled(lobby, reason, io) {
   console.log(`\n❌ [Cancelled] Обработка отменённой игры`);
   console.log(`   Лобби: ${lobby.id}`);
   console.log(`   Причина: ${reason}`);
