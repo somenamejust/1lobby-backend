@@ -44,7 +44,9 @@ class MatchConfigService {
         "mp_force_pick_time": "0",
         "mp_team_intro_time": "0",
         "mp_halftime_duration": "15",
-        "mp_warmup_pausetimer": "0"
+        "mp_warmup_pausetimer": "0",
+        "mp_endmatch_votenextmap": "0",
+        "mp_match_end_changelevel": "0"
       },
       
       "team1": {
