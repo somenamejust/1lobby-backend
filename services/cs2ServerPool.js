@@ -47,13 +47,13 @@ class CS2ServerPool {
     
     console.log(`[CS2Pool] Server ${server.id} assigned to lobby ${lobbyId}`);
     
-    // 🆕 АВТООСВОБОЖДЕНИЕ ЧЕРЕЗ 10 МИНУТ (на случай зависания)
+    // 🆕 АВТООСВОБОЖДЕНИЕ ЧЕРЕЗ 30 МИНУТ (на случай зависания)
     setTimeout(() => {
       if (server.currentLobbyId === lobbyId && server.status === 'in_use') {
         console.log(`[CS2Pool] ⚠️ Автоосвобождение сервера ${server.id} (таймаут 10 мин)`);
         this.releaseServerByLobby(lobbyId);
       }
-    }, 10 * 60 * 1000);
+    }, 30 * 60 * 1000); // ✅ ИСПРАВЛЕНО: 30 минут вместо 10
     
     return server;
   }

@@ -731,8 +731,8 @@ async function processMatchResult(lobbyId, event, io) {
     duration = event.duration || 0;
   }
 
-  // Находим лобби
-  const lobby = await Lobby.findById(lobbyId);
+  // Находим лобби (🆕 ИСПРАВЛЕНИЕ: Используем findOne вместо findById)
+  const lobby = await Lobby.findOne({ id: lobbyId });
   
   if (!lobby) {
     throw new Error(`Лобби ${lobbyId} не найдено`);
