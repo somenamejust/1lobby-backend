@@ -748,13 +748,12 @@ async function processMatchResult(lobbyId, event, io) {
 
   // Обрабатываем результат
   if (winner === 'timeout') {
-    await handleMatchTimeout(lobby);
+    await handleMatchTimeout(lobby, io); // ✅ Добавили io
   } else if (winner === 'unknown') {
-    await handleMatchCancelled(lobby, 'Unknown result');
+    await handleMatchCancelled(lobby, 'Unknown result', io); // ✅ Добавили io
   } else {
-    // Теперь winner уже правильный: 'A', 'B', 'Radiant', 'Dire'
     console.log(`🏆 Победитель: Team ${winner}`);
-    await handleMatchComplete(lobby, winner, matchId, duration);
+    await handleMatchComplete(lobby, winner, matchId, duration, io); // ✅ Добавили io
   }
 
   // Освобождаем ресурсы
@@ -771,17 +770,6 @@ async function processMatchResult(lobbyId, event, io) {
   
   if (lobby.game === 'CS2') {
     console.log(`🎮 CS2 матч завершен, сервер будет освобожден через 10 секунд`);
-  }
-
-  // WebSocket уведомление
-  const freshLobby = await Lobby.findById(lobbyId);
-
-  // 🆕 Проверяем что io доступен
-  if (io) {
-    io.in(lobby.id.toString()).emit('lobbyUpdated', freshLobby.toObject());
-    console.log('[WebSocket] ✅ Отправлено обновление лобби');
-  } else {
-    console.log('[WebSocket] ⚠️ Socket.io недоступен, пропускаем уведомление');
   }
 
   console.log(`✅ Результат обработан!\n`);
@@ -865,19 +853,65 @@ router.post('/matchzy-events', async (req, res) => {
           try {
             console.log(`[CS2] 🧹 Начинаем очистку для лобби ${lobbyId}`);
             
-            // 1. Кикаем всех игроков
-            await cs2Service.executeCommand(
-              serverHost,
-              serverPort,
-              serverRconPassword,
-              'kickall'
-            );
-            console.log('[CS2] ✅ Команда kickall отправлена');
+            // ✅ НОВАЯ ЛОГИКА: Кикаем игроков индивидуально
+            try {
+              console.log('[CS2] 📋 Получаем список игроков...');
+              
+              // 1. Получаем список игроков через status
+              const statusResponse = await cs2Service.executeCommand(
+                serverHost,
+                serverPort,
+                serverRconPassword,
+                'status'
+              );
+              
+              console.log('[CS2] Ответ status:', statusResponse.substring(0, 200));
+              
+              // 2. Парсим игроков (ищем строки с [U:1:...])
+              const playerLines = statusResponse.split('\n').filter(line => 
+                line.includes('[U:1:') || line.includes('STEAM_')
+              );
+              
+              console.log(`[CS2] Найдено игроков на сервере: ${playerLines.length}`);
+              
+              // 3. Кикаем каждого игрока
+              for (const line of playerLines) {
+                // Пытаемся извлечь userID или имя
+                // Формат строки: # 123 "PlayerName" STEAM_1:0:123456 [U:1:123456] ...
+                
+                // Способ 1: Извлекаем userID [U:1:XXXXX]
+                const useridMatch = line.match(/\[U:1:(\d+)\]/);
+                
+                if (useridMatch) {
+                  const userid = useridMatch[1];
+                  console.log(`[CS2] Кикаем игрока с userID: ${userid}`);
+                  
+                  await cs2Service.executeCommand(
+                    serverHost,
+                    serverPort,
+                    serverRconPassword,
+                    `kickid ${userid}`
+                  );
+                  
+                  console.log(`[CS2] ✅ Игрок ${userid} кикнут`);
+                  
+                  // Небольшая задержка между киками
+                  await new Promise(resolve => setTimeout(resolve, 500));
+                }
+              }
+              
+              console.log('[CS2] ✅ Все игроки кикнуты');
+              
+            } catch (kickError) {
+              console.error('[CS2] ⚠️ Ошибка кика игроков:', kickError.message);
+              // Продолжаем выполнение даже если кик не удался
+            }
             
-            // 2. Ждем 2 секунды
+            // 4. Ждем 2 секунды
             await new Promise(resolve => setTimeout(resolve, 2000));
             
-            // 3. Сбрасываем карту
+            // 5. Сбрасываем карту (для гарантии)
+            console.log('[CS2] Сброс карты на de_dust2...');
             await cs2Service.executeCommand(
               serverHost,
               serverPort,
@@ -886,7 +920,7 @@ router.post('/matchzy-events', async (req, res) => {
             );
             console.log('[CS2] ✅ Карта сброшена на de_dust2');
             
-            // 4. ТОЛЬКО ТЕПЕРЬ освобождаем сервер
+            // 6. ТОЛЬКО ТЕПЕРЬ освобождаем сервер
             cs2ServerPool.releaseServer(lobbyId);
             console.log('[CS2] ✅ Сервер освобожден в пуле');
             
@@ -963,9 +997,18 @@ async function handleMatchComplete(lobby, winningTeam, matchId, duration) {
   // Распределяем призы
   await distributePrizes(lobby, winningTeam);
 
-  await lobby.save();
+  // ✅ СОХРАНЯЕМ
+  const updatedLobby = await lobby.save();
   
-  console.log(`✅ [Match Complete] Лобби ${lobby.id} завершено\n`);
+  console.log(`✅ [Match Complete] Лобби ${lobby.id} завершено`);
+
+  // ✅ СРАЗУ ОТПРАВЛЯЕМ WEBSOCKET
+  if (io) {
+    io.in(String(lobby.id)).emit('lobbyUpdated', updatedLobby.toObject());
+    console.log('[WebSocket] ✅ Отправлено обновление лобби\n');
+  } else {
+    console.log('[WebSocket] ⚠️ Socket.io недоступен\n');
+  }
 }
 
 /**
@@ -982,9 +1025,15 @@ async function handleMatchTimeout(lobby) {
   // Возвращаем ставки всем игрокам
   await refundAllPlayers(lobby);
 
-  await lobby.save();
+  const updatedLobby = await lobby.save();
   
-  console.log(`✅ [Timeout] Ставки возвращены всем игрокам\n`);
+  console.log(`✅ [Timeout] Ставки возвращены всем игрокам`);
+  
+  // ✅ ОТПРАВЛЯЕМ WEBSOCKET
+  if (io) {
+    io.in(String(lobby.id)).emit('lobbyUpdated', updatedLobby.toObject());
+    console.log('[WebSocket] ✅ Отправлено обновление лобби\n');
+  }
 }
 
 /**
@@ -1002,9 +1051,15 @@ async function handleMatchCancelled(lobby, reason = 'Game ended abnormally or wa
   // Возвращаем ставки всем игрокам
   await refundAllPlayers(lobby);
 
-  await lobby.save();
+  const updatedLobby = await lobby.save();
   
-  console.log(`✅ [Cancelled] Ставки возвращены всем игрокам\n`);
+  console.log(`✅ [Cancelled] Ставки возвращены всем игрокам`);
+  
+  // ✅ ОТПРАВЛЯЕМ WEBSOCKET
+  if (io) {
+    io.in(String(lobby.id)).emit('lobbyUpdated', updatedLobby.toObject());
+    console.log('[WebSocket] ✅ Отправлено обновление лобби\n');
+  }
 }
 
 /**
@@ -1068,74 +1123,5 @@ async function refundAllPlayers(lobby) {
   
   console.log('');
 }
-
-// ========================================
-// СТАРЫЙ ENDPOINT (можно оставить для совместимости или удалить)
-// ========================================
-
-/**
- * POST /api/lobbies/:id/declare-winner
- * УСТАРЕВШИЙ: Ручное объявление победителя хостом
- * Рекомендуется использовать автоматический endpoint /match-result
- */
-// router.post('/:id/declare-winner', async (req, res) => {
-//   try {
-//     const { hostId, winningTeam } = req.body;
-//     const lobby = await Lobby.findOne({ id: req.params.id });
-
-//     console.log('⚠️ [Manual Winner] Использован ручной endpoint declare-winner');
-//     console.log('   Рекомендуется использовать автоматический endpoint /match-result');
-
-//     if (!lobby) return res.status(404).json({ message: "Лобби не найдено" });
-//     if (String(lobby.host.id) !== String(hostId)) {
-//       return res.status(403).json({ message: "Только хост может определять победителя!" });
-//     }
-//     if (lobby.status !== 'in_progress') {
-//       return res.status(400).json({ message: "Игра не находится в процессе" });
-//     }
-
-//     const entryFee = lobby.entryFee;
-//     const winners = lobby.slots.filter(s => s.user && s.team === winningTeam).map(s => s.user);
-//     const losers = lobby.slots.filter(s => s.user && s.team !== winningTeam).map(s => s.user);
-    
-//     for (const loser of losers) {
-//       await User.updateOne({ id: loser.id }, { $inc: { balance: -entryFee } });
-//       console.log(`[Списано] С игрока ${loser.username} списано ${entryFee}$.`);
-//     }
-
-//     const amountToWin = entryFee * (losers.length / winners.length);
-//     for (const winner of winners) {
-//       await User.updateOne({ id: winner.id }, { $inc: { balance: amountToWin } });
-//       console.log(`[Начислено] Игроку ${winner.username} начислено ${amountToWin}$.`);
-//     }
-    
-//     lobby.status = 'finished';
-//     lobby.finishedAt = new Date();
-//     const updatedLobby = await lobby.save();
-
-//     // Освобождаем бота после завершения игры
-//     if (lobby.botAccountId && lobby.botServerId) {
-//       try {
-//         const server = dotaBotService.getAvailableBotServer();
-//         await dotaBotService.releaseLobby(lobby.botAccountId, server.url);
-//         console.log(`[Bot] ✅ Лобби ${lobby.id} завершено, бот освобожден (Dota Lobby ID: ${lobby.botAccountId})`);
-//       } catch (error) {
-//         console.error('[Bot] ❌ Ошибка освобождения бота:', error.message);
-//       }
-//     }
-
-//     const io = req.app.get('socketio');
-//     io.in(req.params.id).emit('lobbyUpdated', updatedLobby.toObject());
-
-//     res.status(200).json({ 
-//       message: `Команда ${winningTeam} победила!`, 
-//       lobby: updatedLobby.toObject()
-//     });
-
-//   } catch (error) {
-//     console.error("Ошибка при распределении призов:", error);
-//     res.status(500).json({ message: 'Ошибка сервера' });
-//   }
-// });
 
 module.exports = router;
