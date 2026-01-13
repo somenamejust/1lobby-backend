@@ -855,52 +855,52 @@ router.post('/matchzy-events', async (req, res) => {
             
             // ✅ НОВАЯ ЛОГИКА: Кикаем игроков индивидуально
             try {
-              console.log('[CS2] 📋 Получаем список игроков...');
-              
               // 1. Получаем список игроков через status
+              console.log('[CS2] 📋 Получаем список игроков...');
               const statusResponse = await cs2Service.executeCommand(
-                serverHost,
-                serverPort,
-                serverRconPassword,
-                'status'
+                serverHost, serverPort, serverRconPassword, 'status'
               );
-              
-              console.log('[CS2] Ответ status:', statusResponse.substring(0, 200));
-              
-              // 2. Парсим игроков (ищем строки с [U:1:...])
-              const playerLines = statusResponse.split('\n').filter(line => 
-                line.includes('[U:1:') || line.includes('STEAM_')
-              );
-              
-              console.log(`[CS2] Найдено игроков на сервере: ${playerLines.length}`);
-              
-              // 3. Кикаем каждого игрока
-              for (const line of playerLines) {
-                // Пытаемся извлечь userID или имя
-                // Формат строки: # 123 "PlayerName" STEAM_1:0:123456 [U:1:123456] ...
+
+              console.log('[CS2] Ответ status:', statusResponse.substring(0, 500));
+
+              // 2. Парсим ПРАВИЛЬНО - ищем player ID из первой колонки
+              const lines = statusResponse.split('\n');
+              const playerIds = [];
+
+              for (const line of lines) {
+                // Формат: "   0    09:11   41    0     active 786432 188.163.90.156:53081 'durachek'"
+                // Первое число - это player ID
+                const match = line.match(/^\s*(\d+)\s+\d+:\d+\s+\d+\s+\d+\s+active/);
                 
-                // Способ 1: Извлекаем userID [U:1:XXXXX]
-                const useridMatch = line.match(/\[U:1:(\d+)\]/);
-                
-                if (useridMatch) {
-                  const userid = useridMatch[1];
-                  console.log(`[CS2] Кикаем игрока с userID: ${userid}`);
-                  
-                  await cs2Service.executeCommand(
-                    serverHost,
-                    serverPort,
-                    serverRconPassword,
-                    `kickid ${userid}`
-                  );
-                  
-                  console.log(`[CS2] ✅ Игрок ${userid} кикнут`);
-                  
-                  // Небольшая задержка между киками
-                  await new Promise(resolve => setTimeout(resolve, 500));
+                if (match) {
+                  const playerId = match[1];
+                  // Пропускаем ботов и ID 65535 (пустые слоты)
+                  if (!line.includes('BOT') && playerId !== '65535') {
+                    playerIds.push(playerId);
+                  }
                 }
               }
-              
-              console.log('[CS2] ✅ Все игроки кикнуты');
+
+              console.log(`[CS2] Найдено игроков для кика: ${playerIds.length}`);
+              if (playerIds.length > 0) {
+                console.log(`[CS2] Player IDs: ${playerIds.join(', ')}`);
+              }
+
+              // 3. Кикаем каждого игрока по ID
+              for (const playerId of playerIds) {
+                console.log(`[CS2] Кикаем игрока с ID: ${playerId}`);
+                try {
+                  await cs2Service.executeCommand(
+                    serverHost, serverPort, serverRconPassword, `kickid ${playerId}`
+                  );
+                  console.log(`[CS2] ✅ Игрок ${playerId} кикнут`);
+                  await new Promise(resolve => setTimeout(resolve, 1000)); // Ждем 1 сек между киками
+                } catch (kickError) {
+                  console.error(`[CS2] ⚠️ Ошибка кика игрока ${playerId}:`, kickError.message);
+                }
+              }
+
+              console.log('[CS2] ✅ Все игроки обработаны');
               
             } catch (kickError) {
               console.error('[CS2] ⚠️ Ошибка кика игроков:', kickError.message);
@@ -928,7 +928,7 @@ router.post('/matchzy-events', async (req, res) => {
             console.error('[CS2] ❌ Ошибка очистки сервера:', error);
             cs2ServerPool.releaseServer(lobbyId);
           }
-        }, 10000); // 10 секунд
+        }, 20000); // 10 секунд
       }
       
       return res.status(200).json({ success: true });
@@ -1001,11 +1001,21 @@ async function handleMatchComplete(lobby, winningTeam, matchId, duration, io) {
   const updatedLobby = await lobby.save();
   
   console.log(`✅ [Match Complete] Лобби ${lobby.id} завершено`);
+  console.log(`   Победитель: ${winningTeam}`);
+  console.log(`   Match ID: ${matchId}`);
+  console.log(`   Статус: ${updatedLobby.status}`);
 
-  // ✅ СРАЗУ ОТПРАВЛЯЕМ WEBSOCKET
+  // ✅ ОТПРАВЛЯЕМ WEBSOCKET
   if (io) {
-    io.in(String(lobby.id)).emit('lobbyUpdated', updatedLobby.toObject());
-    console.log('[WebSocket] ✅ Отправлено обновление лобби\n');
+    try {
+      const socketsInRoom = await io.in(String(lobby.id)).fetchSockets();
+      console.log(`[WebSocket] 📡 Сокетов в комнате "${lobby.id}": ${socketsInRoom.length}`);
+      
+      io.in(String(lobby.id)).emit('lobbyUpdated', updatedLobby.toObject());
+      console.log('[WebSocket] ✅ Отправлено обновление лобби\n');
+    } catch (socketError) {
+      console.error('[WebSocket] ❌ Ошибка отправки:', socketError.message);
+    }
   } else {
     console.log('[WebSocket] ⚠️ Socket.io недоступен\n');
   }
