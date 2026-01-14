@@ -789,23 +789,19 @@ router.post('/matchzy-events', async (req, res) => {
     console.log(JSON.stringify(event, null, 2));
     console.log('========================================');
 
-    // 🆕 ИЗВЛЕКАЕМ ТИП СОБЫТИЯ
     const eventType = event.event;
     
-    // Игнорируем события которые не нужны
     if (eventType === 'round_end' || eventType === 'map_result') {
       console.log(`ℹ️ Событие ${eventType} проигнорировано`);
       return res.status(200).json({ success: true, message: 'Event ignored' });
     }
 
-    // 🆕 ИЩЕМ ЛОББИ ПО MATCHID
     const matchId = event.matchid;
     if (!matchId) {
       console.log('⚠️ Нет matchid в событии');
       return res.status(400).json({ success: false, error: 'No matchid' });
     }
 
-    // Ищем лобби которое содержит этот matchId в конце своего ID
     const lobby = await Lobby.findOne({
       id: { $gte: matchId * 1000, $lt: (matchId + 1) * 1000 }
     });
@@ -815,25 +811,19 @@ router.post('/matchzy-events', async (req, res) => {
       return res.status(404).json({ success: false, error: 'Lobby not found' });
     }
 
-    // Обрабатываем series_end
     if (eventType === 'series_end') {
       console.log('✅ Найдено лобби:', lobby.id);
       
-      // 🆕 FIX: Получаем io и передаём правильные параметры
       const io = req.app.get('socketio');
       
-      // 🆕 FIX: Оборачиваем в try-catch
       try {
-        await processMatchResult(lobby.id, event, io); // ✅ ИСПРАВЛЕНО!
+        await processMatchResult(lobby.id, event, io);
       } catch (processError) {
         console.error('❌ [ProcessResult] Ошибка обработки результата:', processError);
-        // Продолжаем выполнение даже если processMatchResult упал
       }
       
-      // 🎮 CS2: Очистка сервера с задержкой
+      // 🎮 CS2: Обработка завершения матча
       if (lobby.game === 'CS2') {
-        console.log('🎮 CS2 матч завершен, сервер будет очищен через 10 секунд');
-        
         const cs2Service = require('../services/cs2Service');
         const cs2ServerPool = require('../services/cs2ServerPool');
         const server = cs2ServerPool.getServerByLobby(lobby.id);
@@ -843,19 +833,33 @@ router.post('/matchzy-events', async (req, res) => {
           return res.status(200).json({ success: true });
         }
         
-        // Сохраняем данные сервера ДО setTimeout
         const serverHost = server.host;
         const serverPort = server.port;
         const serverRconPassword = server.rconPassword;
         const lobbyId = lobby.id;
         
+        // 🆕 ОТКЛЮЧАЕМ ГОЛОСОВАНИЕ ЗА КАРТУ
+        try {
+          await cs2Service.executeCommand(
+            serverHost, serverPort, serverRconPassword,
+            'mp_endmatch_votenextmap 0'
+          );
+          await cs2Service.executeCommand(
+            serverHost, serverPort, serverRconPassword,
+            'mp_match_end_changelevel 0'
+          );
+          console.log('[CS2] ✅ Голосование за карту отключено');
+        } catch (rconErr) {
+          console.error('[CS2] ⚠️ Не удалось отключить голосование:', rconErr.message);
+        }
+        
+        console.log('🎮 CS2 матч завершен, сервер будет очищен через 20 секунд');
+        
         setTimeout(async () => {
           try {
             console.log(`[CS2] 🧹 Начинаем очистку для лобби ${lobbyId}`);
             
-            // ✅ НОВАЯ ЛОГИКА: Кикаем игроков индивидуально
             try {
-              // 1. Получаем список игроков через status
               console.log('[CS2] 📋 Получаем список игроков...');
               const statusResponse = await cs2Service.executeCommand(
                 serverHost, serverPort, serverRconPassword, 'status'
@@ -863,18 +867,14 @@ router.post('/matchzy-events', async (req, res) => {
 
               console.log('[CS2] Ответ status:', statusResponse.substring(0, 500));
 
-              // 2. Парсим ПРАВИЛЬНО - ищем player ID из первой колонки
               const lines = statusResponse.split('\n');
               const playerIds = [];
 
               for (const line of lines) {
-                // Формат: "   0    09:11   41    0     active 786432 188.163.90.156:53081 'durachek'"
-                // Первое число - это player ID
                 const match = line.match(/^\s*(\d+)\s+\d+:\d+\s+\d+\s+\d+\s+active/);
                 
                 if (match) {
                   const playerId = match[1];
-                  // Пропускаем ботов и ID 65535 (пустые слоты)
                   if (!line.includes('BOT') && playerId !== '65535') {
                     playerIds.push(playerId);
                   }
@@ -886,7 +886,6 @@ router.post('/matchzy-events', async (req, res) => {
                 console.log(`[CS2] Player IDs: ${playerIds.join(', ')}`);
               }
 
-              // 3. Кикаем каждого игрока по ID
               for (const playerId of playerIds) {
                 console.log(`[CS2] Кикаем игрока с ID: ${playerId}`);
                 try {
@@ -894,7 +893,7 @@ router.post('/matchzy-events', async (req, res) => {
                     serverHost, serverPort, serverRconPassword, `kickid ${playerId}`
                   );
                   console.log(`[CS2] ✅ Игрок ${playerId} кикнут`);
-                  await new Promise(resolve => setTimeout(resolve, 1000)); // Ждем 1 сек между киками
+                  await new Promise(resolve => setTimeout(resolve, 1000));
                 } catch (kickError) {
                   console.error(`[CS2] ⚠️ Ошибка кика игрока ${playerId}:`, kickError.message);
                 }
@@ -904,13 +903,10 @@ router.post('/matchzy-events', async (req, res) => {
               
             } catch (kickError) {
               console.error('[CS2] ⚠️ Ошибка кика игроков:', kickError.message);
-              // Продолжаем выполнение даже если кик не удался
             }
             
-            // 4. Ждем 2 секунды
             await new Promise(resolve => setTimeout(resolve, 2000));
             
-            // 5. Сбрасываем карту (для гарантии)
             console.log('[CS2] Сброс карты на de_dust2...');
             await cs2Service.executeCommand(
               serverHost,
@@ -920,7 +916,6 @@ router.post('/matchzy-events', async (req, res) => {
             );
             console.log('[CS2] ✅ Карта сброшена на de_dust2');
             
-            // 6. ТОЛЬКО ТЕПЕРЬ освобождаем сервер
             cs2ServerPool.releaseServer(lobbyId);
             console.log('[CS2] ✅ Сервер освобожден в пуле');
             
@@ -928,13 +923,12 @@ router.post('/matchzy-events', async (req, res) => {
             console.error('[CS2] ❌ Ошибка очистки сервера:', error);
             cs2ServerPool.releaseServer(lobbyId);
           }
-        }, 20000); // 10 секунд
+        }, 20000);
       }
       
       return res.status(200).json({ success: true });
     }
 
-    // Если дошли сюда - неизвестный тип события
     console.log(`ℹ️ Неизвестное событие ${eventType} проигнорировано`);
     res.status(200).json({ success: true, message: 'Event received' });
 
