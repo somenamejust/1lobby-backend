@@ -36,6 +36,8 @@ class MatchConfigService {
       "remote_log_header_key": "",
       "remote_log_header_value": "",
 
+      "playout_enabled_default": false,
+
       "cvars": {
         "mp_teamname_1": "Team A",
         "mp_teamname_2": "Team B",
