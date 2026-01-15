@@ -816,33 +816,6 @@ router.post('/matchzy-events', async (req, res) => {
       
       const io = req.app.get('socketio');
       
-      // 🎮 CS2: СРАЗУ отключаем голосование (ДО processMatchResult!)
-      if (lobby.game === 'CS2') {
-        const cs2Service = require('../services/cs2Service');
-        const cs2ServerPool = require('../services/cs2ServerPool');
-        const server = cs2ServerPool.getServerByLobby(lobby.id);
-        
-        if (server) {
-          const serverHost = server.host;
-          const serverPort = server.port;
-          const serverRconPassword = server.rconPassword;
-          
-          try {
-            await cs2Service.executeCommand(
-              serverHost, serverPort, serverRconPassword,
-              'mp_endmatch_votenextmap 0'
-            );
-            await cs2Service.executeCommand(
-              serverHost, serverPort, serverRconPassword,
-              'mp_match_end_changelevel 0'
-            );
-            console.log('[CS2] ✅ Голосование отключено СРАЗУ после series_end');
-          } catch (rconErr) {
-            console.error('[CS2] ⚠️ Ошибка отключения голосования:', rconErr.message);
-          }
-        }
-      }
-      
       // Обрабатываем результат
       try {
         await processMatchResult(lobby.id, event, io);
