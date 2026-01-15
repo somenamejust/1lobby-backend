@@ -821,18 +821,19 @@ router.post('/matchzy-events', async (req, res) => {
         const server = cs2ServerPool.getServerByLobby(lobby.id);
         
         if (server) {
-          try {
-            console.log('[CS2] 🚫 НЕМЕДЛЕННО отключаем голосование');
-            await cs2Service.executeCommand(
-              server.host,
-              server.port,
-              server.rconPassword,
-              'mp_endmatch_votenextmap 0; mp_match_end_changelevel 0'
-            );
+          // 🚨 НЕ ЖДЁМ РЕЗУЛЬТАТА! Просто отправляем команду
+          cs2Service.executeCommand(
+            server.host,
+            server.port,
+            server.rconPassword,
+            'mp_endmatch_votenextmap 0; mp_match_end_changelevel 0'
+          ).then(() => {
             console.log('[CS2] ✅ Голосование отключено');
-          } catch (err) {
-            console.error('[CS2] ⚠️ Не удалось отключить голосование:', err.message);
-          }
+          }).catch(err => {
+            console.error('[CS2] ⚠️ Ошибка отключения голосования:', err.message);
+          });
+          
+          console.log('[CS2] 🚫 Команда отключения голосования отправлена (не ждём ответа)');
         }
       }
       
