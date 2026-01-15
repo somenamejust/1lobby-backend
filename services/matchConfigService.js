@@ -30,9 +30,6 @@ class MatchConfigService {
       "map_sides": ["team2_ct"],
       "skip_veto": true,
 
-      "mp_endmatch_votenextmap": false,
-      "mp_match_end_changelevel": false,
-
       "players_per_team": Math.max(Object.keys(teamA).length, Object.keys(teamB).length),
       "min_players_to_ready": Math.max(Object.keys(teamA).length, Object.keys(teamB).length),
 
@@ -48,7 +45,11 @@ class MatchConfigService {
         "mp_force_pick_time": "0",
         "mp_team_intro_time": "0",
         "mp_halftime_duration": "15",
-        "mp_warmup_pausetimer": "0"
+        "mp_warmup_pausetimer": "0",
+
+        "mp_endmatch_votenextmap": "0",
+        "mp_match_end_changelevel": "0",
+        "mp_match_restart_delay": "15"
       },
       
       "team1": {
