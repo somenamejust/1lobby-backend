@@ -814,16 +814,38 @@ router.post('/matchzy-events', async (req, res) => {
     if (eventType === 'series_end') {
       console.log('✅ Найдено лобби:', lobby.id);
       
+      // 🆕 ШАГ 1: НЕМЕДЛЕННО отключаем голосование
+      if (lobby.game === 'CS2') {
+        const cs2Service = require('../services/cs2Service');
+        const cs2ServerPool = require('../services/cs2ServerPool');
+        const server = cs2ServerPool.getServerByLobby(lobby.id);
+        
+        if (server) {
+          try {
+            console.log('[CS2] 🚫 НЕМЕДЛЕННО отключаем голосование');
+            await cs2Service.executeCommand(
+              server.host,
+              server.port,
+              server.rconPassword,
+              'mp_endmatch_votenextmap 0; mp_match_end_changelevel 0'
+            );
+            console.log('[CS2] ✅ Голосование отключено');
+          } catch (err) {
+            console.error('[CS2] ⚠️ Не удалось отключить голосование:', err.message);
+          }
+        }
+      }
+      
       const io = req.app.get('socketio');
       
-      // Обрабатываем результат
+      // ШАГ 2: Обрабатываем результат
       try {
         await processMatchResult(lobby.id, event, io);
       } catch (processError) {
         console.error('❌ [ProcessResult] Ошибка обработки результата:', processError);
       }
       
-      // 🎮 CS2: Cleanup через 20 секунд
+      // 🎮 ШАГ 3: CS2 Cleanup через 20 секунд
       if (lobby.game === 'CS2') {
         const cs2Service = require('../services/cs2Service');
         const cs2ServerPool = require('../services/cs2ServerPool');
