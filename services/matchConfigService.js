@@ -49,7 +49,7 @@ class MatchConfigService {
 
         "mp_endmatch_votenextmap": "0",
         "mp_match_end_changelevel": "0",
-        "mp_match_restart_delay": "15"
+        "mp_match_restart_delay": "25"
       },
       
       "team1": {
