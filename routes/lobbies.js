@@ -147,7 +147,7 @@ router.put('/:id/leave', async (req, res) => {
       if (lobby.cs2ServerId) {
         try {
           console.log(`[CS2] Хост покинул лобби ${lobby.id}, освобождаем сервер ${lobby.cs2ServerId}`);
-          cs2ServerPool.releaseServer(lobby.cs2ServerId);
+          cs2ServerPool.releaseServerByLobby(lobby.cs2ServerId);
           
           const server = cs2ServerPool.getServerById(lobby.cs2ServerId);
           if (server) {
@@ -197,7 +197,7 @@ router.put('/:id/leave', async (req, res) => {
       if (lobby.cs2ServerId) {
         try {
           console.log(`[CS2] Лобби ${lobby.id} опустело, освобождаем сервер ${lobby.cs2ServerId}`);
-          cs2ServerPool.releaseServer(lobby.cs2ServerId);
+          cs2ServerPool.releaseServerByLobby(lobby.cs2ServerId);
           
           const server = cs2ServerPool.getServerById(lobby.cs2ServerId);
           if (server) {
@@ -677,7 +677,7 @@ router.put('/:id/start', async (req, res) => {
         
         // Освобождаем сервер при ошибке
         if (assignedServer) {
-          cs2ServerPool.releaseServer(lobby.id);
+          cs2ServerPool.releaseServerByLobby(lobby.id);
         }
       }
     }
@@ -925,12 +925,12 @@ router.post('/matchzy-events', async (req, res) => {
             );
             console.log('[CS2] ✅ Карта сброшена на de_dust2');
             
-            cs2ServerPool.releaseServer(lobbyId);
+            cs2ServerPool.releaseServerByLobby(lobbyId);
             console.log('[CS2] ✅ Сервер освобожден в пуле');
             
           } catch (error) {
             console.error('[CS2] ❌ Ошибка очистки сервера:', error);
-            cs2ServerPool.releaseServer(lobbyId);
+            cs2ServerPool.releaseServerByLobby(lobbyId);
           }
         }, 20000);
       }
